@@ -1,0 +1,304 @@
+/* PROJEKT NACHTFALKE – alle Daten bleiben lokal im Browser (localStorage). */
+const K = { contacts: 'nf_contacts', admin: 'nf_admin', sys: 'nf_sys', pass: 'nf_pass' };
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Math.random().toString(36).slice(2, 10).toUpperCase();
+
+let contacts = load(K.contacts, []);
+let admin = load(K.admin, {});
+let sys = load(K.sys, {});
+let selected = null;
+
+/* ---------- Zugang ---------- */
+async function hash(t) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('nachtfalke:' + t));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+async function login() {
+  const p = $('#gate-pass').value;
+  if (!p) return;
+  const h = await hash(p), stored = localStorage.getItem(K.pass);
+  if (!stored) localStorage.setItem(K.pass, h);
+  else if (stored !== h) {
+    $('#gate-msg').textContent = '✖ ZUGRIFF VERWEIGERT';
+    $('#gate-msg').style.color = 'var(--red)';
+    $('#gate-pass').value = '';
+    return;
+  }
+  sessionStorage.setItem('nf_ok', '1');
+  enter();
+}
+function enter() { $('#gate').hidden = true; $('#app').hidden = false; renderList(); fillAdmin(); }
+$('#gate-btn').onclick = login;
+$('#gate-pass').onkeydown = e => { if (e.key === 'Enter') login(); };
+$('#lock').onclick = () => { sessionStorage.removeItem('nf_ok'); location.reload(); };
+if (sessionStorage.getItem('nf_ok')) enter();
+setInterval(() => { $('#utc').textContent = new Date().toISOString().slice(0, 19).replace('T', ' ') + 'Z'; }, 1000);
+
+/* ---------- Tabs ---------- */
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x === b));
+  document.querySelectorAll('.tab').forEach(t => { t.hidden = t.id !== 'tab-' + b.dataset.tab; });
+  if (b.dataset.tab === 'lage') initMap();
+  if (b.dataset.tab === 'admin') sysInfo();
+});
+
+/* ---------- Kontakte ---------- */
+function daysToBirthday(iso) {
+  if (!iso) return null;
+  const now = new Date(), d = new Date(iso);
+  const next = new Date(now.getFullYear(), d.getMonth(), d.getDate());
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (next < today) next.setFullYear(next.getFullYear() + 1);
+  return Math.round((next - today) / 864e5);
+}
+function renderList() {
+  const q = $('#search').value.toLowerCase().trim();
+  const list = contacts.filter(c => !q || JSON.stringify(c).toLowerCase().includes(q))
+    .sort((a, b) => (a.last || '').localeCompare(b.last || ''));
+  $('#contact-list').innerHTML = list.map(c => `
+    <li data-id="${c.id}" class="${c.id === selected ? 'sel' : ''}">
+      <b>${esc(c.last).toUpperCase()}${c.last && c.first ? ', ' : ''}${esc(c.first)}</b><br>
+      ${c.relation ? `<span class="tag">${esc(c.relation)}</span>` : ''}
+      ${(c.vehicles || []).filter(v => v.plate).map(v => `<span class="tag">${esc(v.plate)}</span>`).join('')}
+    </li>`).join('') || '<li class="dim">KEINE EINTRÄGE</li>';
+  $('#contact-list').querySelectorAll('li[data-id]').forEach(li => li.onclick = () => openContact(li.dataset.id));
+  const soon = contacts.map(c => [c, daysToBirthday(c.birthday)]).filter(([, d]) => d !== null && d <= 14).sort((a, b) => a[1] - b[1]);
+  $('#bdays').innerHTML = soon.map(([c, d]) => `🎂 ${esc(c.first)} ${esc(c.last)} – ${d === 0 ? 'HEUTE' : 'in ' + d + ' T'}`).join('<br>');
+}
+$('#search').oninput = renderList;
+$('#new-contact').onclick = () => {
+  const c = { id: uid(), created: new Date().toISOString(), phones: [], vehicles: [] };
+  contacts.push(c); save(K.contacts, contacts); openContact(c.id);
+};
+
+const SUB = {
+  phones: { title: 'TELEFONNUMMERN', fields: [['type', 'Typ (mobil/fest)'], ['number', 'Nummer']] },
+  vehicles: { title: 'FAHRZEUGE', fields: [['make', 'Marke/Modell'], ['color', 'Farbe'], ['plate', 'Kennzeichen']] },
+};
+function subHTML(key, items) {
+  const s = SUB[key];
+  const row = it => `<div class="sub-item">${s.fields.map(([f, l]) => `<input data-f="${f}" placeholder="${l}" value="${esc(it[f])}">`).join('')}<button type="button" class="danger rm">✕</button></div>`;
+  return `<div class="sub" data-sub="${key}"><h3>${s.title}</h3><div class="items">${items.map(row).join('')}</div><button type="button" class="add">+ HINZUFÜGEN</button></div>`;
+}
+function openContact(id) {
+  selected = id;
+  const c = contacts.find(x => x.id === id);
+  const f = (name, label, type = 'text') => `<label>${label}<input name="${name}" type="${type}" value="${esc(c[name])}"></label>`;
+  $('#detail').innerHTML = `
+    <h3>KONTAKT #${c.id}</h3>
+    <form class="form" id="contact-form">
+      ${f('first', 'Vorname')}${f('last', 'Nachname')}${f('relation', 'Beziehung (Familie, Freund…)')}
+      ${f('birthday', 'Geburtstag', 'date')}${f('email', 'E-Mail', 'email')}
+      ${f('street', 'Straße & Nr.')}${f('zip', 'PLZ')}${f('city', 'Ort')}${f('country', 'Land')}
+      ${subHTML('phones', c.phones || [])}
+      ${subHTML('vehicles', c.vehicles || [])}
+      <label class="full">Notizen<textarea name="notes" rows="5">${esc(c.notes)}</textarea></label>
+      <div class="actions"><button>SPEICHERN</button><button type="button" id="showmap">⌖ AUF KARTE ZEIGEN</button><button type="button" class="danger" id="del">LÖSCHEN</button></div>
+    </form>`;
+  const form = $('#contact-form');
+  form.querySelectorAll('.sub').forEach(sub => {
+    const key = sub.dataset.sub;
+    sub.querySelector('.add').onclick = () => {
+      sub.querySelector('.items').insertAdjacentHTML('beforeend', subHTML(key, [{}]).match(/<div class="sub-item">.*?<\/button><\/div>/s)[0]);
+      bindRm(sub);
+    };
+    bindRm(sub);
+  });
+  form.onsubmit = e => {
+    e.preventDefault();
+    new FormData(form).forEach((v, k) => { c[k] = v.trim(); });
+    form.querySelectorAll('.sub').forEach(sub => {
+      c[sub.dataset.sub] = [...sub.querySelectorAll('.sub-item')].map(r => Object.fromEntries([...r.querySelectorAll('input')].map(i => [i.dataset.f, i.value.trim()])))
+        .filter(o => Object.values(o).some(Boolean));
+    });
+    c.updated = new Date().toISOString();
+    save(K.contacts, contacts); renderList(); flash('GESPEICHERT');
+  };
+  $('#showmap').onclick = () => showOnMap(c);
+  $('#del').onclick = () => {
+    if (!confirm('Kontakt wirklich löschen?')) return;
+    contacts = contacts.filter(x => x.id !== id); save(K.contacts, contacts);
+    selected = null; $('#detail').innerHTML = '<p class="dim center">KONTAKT GELÖSCHT</p>'; renderList();
+  };
+  renderList();
+}
+function bindRm(sub) { sub.querySelectorAll('.rm').forEach(b => b.onclick = () => b.parentElement.remove()); }
+function flash(msg) { const b = $('#contact-form button'); const t = b.textContent; b.textContent = '✔ ' + msg; setTimeout(() => { b.textContent = t; }, 1200); }
+
+$('#export').onclick = () => {
+  const blob = new Blob([JSON.stringify({ contacts, admin, exported: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `nachtfalke-backup-${Date.now()}.json` });
+  a.click(); URL.revokeObjectURL(a.href);
+};
+$('#import').onchange = async e => {
+  try {
+    const d = JSON.parse(await e.target.files[0].text());
+    if (!Array.isArray(d.contacts)) throw 0;
+    if (!confirm(`${d.contacts.length} Kontakte importieren? Bestehende Daten werden ersetzt.`)) return;
+    contacts = d.contacts; save(K.contacts, contacts);
+    if (d.admin) { admin = d.admin; save(K.admin, admin); fillAdmin(); }
+    renderList();
+  } catch { alert('Ungültige Datei.'); }
+  e.target.value = '';
+};
+
+/* ---------- Admin ---------- */
+function fillAdmin() {
+  const f = $('#admin-form');
+  [...f.elements].forEach(el => { if (el.name) el.value = admin[el.name] ?? ''; });
+  $('#sys-form').aisKey.value = sys.aisKey ?? '';
+}
+$('#admin-form').onsubmit = e => {
+  e.preventDefault();
+  new FormData(e.target).forEach((v, k) => { admin[k] = v.trim(); });
+  save(K.admin, admin); sysInfo();
+};
+$('#sys-form').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target;
+  sys.aisKey = f.aisKey.value.trim(); save(K.sys, sys);
+  if (f.newPass.value) { localStorage.setItem(K.pass, await hash(f.newPass.value)); f.newPass.value = ''; }
+  sysInfo();
+};
+$('#wipe').onclick = () => {
+  if (prompt('Zum Bestätigen LÖSCHEN eingeben:') !== 'LÖSCHEN') return;
+  Object.values(K).forEach(k => localStorage.removeItem(k));
+  sessionStorage.clear(); location.reload();
+};
+function sysInfo() {
+  const bytes = Object.values(K).reduce((n, k) => n + (localStorage.getItem(k) || '').length, 0);
+  $('#sysinfo').textContent =
+`OPERATOR   ${admin.codename || '—'}
+KONTAKTE   ${contacts.length}
+FAHRZEUGE  ${contacts.reduce((n, c) => n + (c.vehicles || []).length, 0)}
+SPEICHER   ${(bytes / 1024).toFixed(1)} KB (lokal)
+AIS-KEY    ${sys.aisKey ? 'GESETZT' : 'FEHLT'}`;
+}
+
+/* ---------- Lagekarte ---------- */
+let map, layers = {}, timers = {}, aisSocket = null;
+const ships = new Map();
+function feed(msg) {
+  const el = $('#feed');
+  el.insertAdjacentHTML('afterbegin', `<div>[${new Date().toISOString().slice(11, 19)}] ${esc(msg)}</div>`);
+  while (el.children.length > 60) el.lastChild.remove();
+}
+function initMap() {
+  if (map) { map.invalidateSize(); return; }
+  const center = (admin.home || '').split(',').map(Number);
+  map = L.map('map', { worldCopyJump: true }).setView(center.length === 2 && center.every(isFinite) ? center : [51, 10], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(map);
+  document.querySelectorAll('.layers input[data-layer]').forEach(cb => cb.onchange = () => toggle(cb.dataset.layer, cb.checked));
+  map.on('moveend', () => { if (layers.flights) loadFlights(); if (aisSocket) subscribeAis(); });
+  feed('LAGEKARTE ONLINE');
+}
+function toggle(name, on) {
+  if (!on) {
+    clearInterval(timers[name]);
+    if (layers[name]) { map.removeLayer(layers[name]); delete layers[name]; }
+    if (name === 'ships' && aisSocket) { aisSocket.close(); aisSocket = null; ships.clear(); }
+    const c = $('#c-' + name); if (c) c.textContent = '';
+    feed(name.toUpperCase() + ' AUS');
+    return;
+  }
+  layers[name] = name === 'night' ? L.terminator({ fillOpacity: .35, color: '#000' }) : L.layerGroup();
+  layers[name].addTo(map);
+  feed(name.toUpperCase() + ' AN');
+  ({
+    flights: () => { loadFlights(); timers.flights = setInterval(loadFlights, 15000); },
+    quakes: () => { loadQuakes(); timers.quakes = setInterval(loadQuakes, 300000); },
+    iss: () => { loadIss(); timers.iss = setInterval(loadIss, 5000); },
+    night: () => { timers.night = setInterval(() => layers.night && layers.night.setTime(), 60000); },
+    ships: startAis,
+  })[name]();
+}
+const icon = (cls, ch, rot = 0) => L.divIcon({ className: '', html: `<div class="${cls}" style="transform:rotate(${rot}deg)">${ch}</div>`, iconSize: [16, 16], iconAnchor: [8, 8] });
+
+async function loadFlights() {
+  const b = map.getBounds();
+  const url = `https://opensky-network.org/api/states/all?lamin=${b.getSouth()}&lomin=${b.getWest()}&lamax=${b.getNorth()}&lomax=${b.getEast()}`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (!layers.flights) return;
+    layers.flights.clearLayers();
+    (d.states || []).filter(s => s[5] != null && s[6] != null).slice(0, 1500).forEach(s => {
+      L.marker([s[6], s[5]], { icon: icon('plane', '✈', (s[10] || 0) - 90) })
+        .bindPopup(`<b>${esc((s[1] || '').trim() || s[0])}</b><br>Herkunft: ${esc(s[2])}<br>Höhe: ${s[7] ? Math.round(s[7]) + ' m' : '—'}<br>Speed: ${s[9] ? Math.round(s[9] * 3.6) + ' km/h' : '—'}<br>Kurs: ${s[10] ? Math.round(s[10]) + '°' : '—'}<br>${s[8] ? 'AM BODEN' : 'IN DER LUFT'}`)
+        .addTo(layers.flights);
+    });
+    $('#c-flights').textContent = `(${(d.states || []).length})`;
+  } catch (e) { feed('FLÜGE: ' + e.message + ' (OpenSky-Limit?)'); }
+}
+async function loadQuakes() {
+  try {
+    const d = await (await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson')).json();
+    if (!layers.quakes) return;
+    layers.quakes.clearLayers();
+    d.features.forEach(q => {
+      const [lon, lat, depth] = q.geometry.coordinates, m = q.properties.mag || 0;
+      L.circleMarker([lat, lon], { radius: 3 + m * 2, color: m >= 5 ? '#ff3b3b' : '#ffb000', weight: 1, fillOpacity: .3 })
+        .bindPopup(`<b>M ${m.toFixed(1)}</b><br>${esc(q.properties.place)}<br>Tiefe: ${depth} km<br>${new Date(q.properties.time).toLocaleString('de-DE')}`)
+        .addTo(layers.quakes);
+    });
+    $('#c-quakes').textContent = `(${d.features.length})`;
+  } catch (e) { feed('BEBEN: ' + e.message); }
+}
+async function loadIss() {
+  try {
+    const d = await (await fetch('https://api.wheretheiss.at/v1/satellites/25544')).json();
+    if (!layers.iss) return;
+    layers.iss.clearLayers();
+    L.marker([d.latitude, d.longitude], { icon: icon('iss', '✦') })
+      .bindPopup(`<b>ISS</b><br>Höhe: ${Math.round(d.altitude)} km<br>Speed: ${Math.round(d.velocity)} km/h`).addTo(layers.iss);
+  } catch (e) { feed('ISS: ' + e.message); }
+}
+function startAis() {
+  if (!sys.aisKey) { feed('AIS: KEIN API-KEY – im Admin-Bereich eintragen'); return; }
+  aisSocket = new WebSocket('wss://stream.aisstream.io/v0/stream');
+  aisSocket.onopen = () => { feed('AIS: VERBUNDEN'); subscribeAis(); };
+  aisSocket.onerror = () => feed('AIS: VERBINDUNGSFEHLER');
+  aisSocket.onmessage = async ev => {
+    const txt = typeof ev.data === 'string' ? ev.data : await ev.data.text();
+    const m = JSON.parse(txt), meta = m.MetaData, pos = m.Message?.PositionReport;
+    if (!meta || !pos || !layers.ships) return;
+    const key = meta.MMSI, ll = [meta.latitude, meta.longitude];
+    const html = `<b>${esc((meta.ShipName || '').trim() || 'MMSI ' + key)}</b><br>MMSI: ${key}<br>Speed: ${pos.Sog} kn<br>Kurs: ${pos.Cog}°`;
+    if (ships.has(key)) ships.get(key).setLatLng(ll).setPopupContent(html);
+    else ships.set(key, L.marker(ll, { icon: icon('ship', '▲', pos.TrueHeading < 360 ? pos.TrueHeading : pos.Cog) }).bindPopup(html).addTo(layers.ships));
+    $('#c-ships').textContent = `(${ships.size})`;
+  };
+}
+function subscribeAis() {
+  if (!aisSocket || aisSocket.readyState !== 1) return;
+  const b = map.getBounds();
+  aisSocket.send(JSON.stringify({ APIKey: sys.aisKey, BoundingBoxes: [[[b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]]], FilterMessageTypes: ['PositionReport'] }));
+}
+
+/* ---------- Adresse auf Karte ---------- */
+let target = null;
+async function showOnMap(c) {
+  const q = [c.street, c.zip, c.city, c.country].filter(Boolean).join(', ');
+  if (!q) { alert('Keine Adresse hinterlegt.'); return; }
+  document.querySelector('nav button[data-tab="lage"]').click();
+  try {
+    if (!c.geo || c.geo.q !== q) {
+      const r = await (await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q))).json();
+      if (!r.length) throw new Error('ADRESSE NICHT GEFUNDEN');
+      c.geo = { q, lat: +r[0].lat, lon: +r[0].lon }; save(K.contacts, contacts);
+    }
+    if (target) map.removeLayer(target);
+    target = L.layerGroup([
+      L.circle([c.geo.lat, c.geo.lon], { radius: 120, color: '#39ff6a', weight: 1, fillOpacity: .08, className: 'pulse' }),
+      L.marker([c.geo.lat, c.geo.lon], { icon: L.divIcon({ className: '', html: '<div class="target">⌖</div>', iconSize: [30, 30], iconAnchor: [15, 15] }) })
+        .bindPopup(`<b>${esc(c.first)} ${esc(c.last).toUpperCase()}</b><br>${esc(q)}<br><span class="dim">${c.geo.lat.toFixed(5)}, ${c.geo.lon.toFixed(5)}</span>`),
+    ]).addTo(map);
+    feed('ZIEL ERFASST: ' + [c.first, c.last].filter(Boolean).join(' '));
+    map.flyTo([c.geo.lat, c.geo.lon], 17, { duration: 2.5 });
+    map.once('moveend', () => target.eachLayer(l => l.openPopup && l.openPopup()));
+  } catch (e) { feed('GEOCODING: ' + e.message); }
+}
