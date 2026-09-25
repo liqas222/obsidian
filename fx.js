@@ -5,24 +5,38 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 /* ---------- Sound (Web Audio, keine Dateien) ---------- */
 const sfx = (() => {
   let ctx, on = localStorage.getItem('bw_sound') !== 'off';
-  const tone = (freq, dur = 0.08, type = 'square', vol = 0.04, delay = 0) => {
+  // Ton durch Tiefpassfilter: dumpf und schwer wie in einem Kommandobunker.
+  const tone = (freq, dur = 0.08, type = 'square', vol = 0.04, delay = 0, cutoff = 900, slide = 0) => {
     if (!on) return;
     try {
       ctx = ctx || new AudioContext();
-      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + delay;
-      o.type = type; o.frequency.value = freq;
-      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + dur);
+      const o = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain(), t = ctx.currentTime + delay;
+      o.type = type; o.frequency.setValueAtTime(freq, t);
+      if (slide) o.frequency.exponentialRampToValueAtTime(freq * slide, t + dur);
+      f.type = 'lowpass'; f.frequency.value = cutoff; f.Q.value = 4;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(f).connect(g).connect(ctx.destination); o.start(t); o.stop(t + dur + 0.02);
     } catch {}
   };
   const api = {
     get on() { return on; },
     set(v) { on = v; try { localStorage.setItem('bw_sound', v ? 'on' : 'off'); } catch {} updateBtn(); },
-    key: () => tone(1800 + Math.random() * 400, 0.015, 'square', 0.015),
-    blip: () => tone(1200, 0.06, 'sine', 0.05),
-    granted: () => { tone(880, 0.1, 'sine', 0.06); tone(1320, 0.18, 'sine', 0.06, 0.12); },
-    denied: () => { tone(220, 0.25, 'sawtooth', 0.06); tone(160, 0.35, 'sawtooth', 0.06, 0.27); },
-    alarm: () => { for (let i = 0; i < 6; i++) tone(i % 2 ? 660 : 880, 0.15, 'square', 0.05, i * 0.18); },
+    // Schweres Relais-Klacken
+    key: () => { tone(140 + Math.random() * 40, 0.03, 'square', 0.05, 0, 600); },
+    // Tiefes Sonar-Ping
+    blip: () => tone(330, 0.35, 'sine', 0.07, 0, 700, 0.92),
+    // Aufsteigender Bass-Akkord: Zugang gewährt
+    granted: () => {
+      tone(110, 0.9, 'sawtooth', 0.05, 0, 400);
+      tone(165, 0.9, 'sawtooth', 0.04, 0.15, 500);
+      tone(220, 1.1, 'sawtooth', 0.04, 0.3, 700);
+    },
+    // Tiefes Brummen: Zugang verweigert
+    denied: () => { tone(70, 0.5, 'sawtooth', 0.09, 0, 300); tone(55, 0.7, 'sawtooth', 0.09, 0.45, 250); },
+    // Klaxon-Alarm
+    alarm: () => { for (let i = 0; i < 6; i++) tone(260, 0.55, 'sawtooth', 0.07, i * 0.7, 800, 0.75); },
+    // Tiefes Rumpeln (Bootsequenz)
+    rumble: (dur = 3) => { tone(45, dur, 'sine', 0.12, 0, 200); tone(47, dur, 'triangle', 0.06, 0, 200); },
   };
   function updateBtn() { const b = q('#sound'); if (b) b.textContent = on ? '🔊' : '🔇'; }
   document.addEventListener('DOMContentLoaded', () => {
@@ -38,6 +52,7 @@ const sfx = (() => {
 async function bootSequence() {
   const box = q('#boot'), out = q('#boot-text');
   box.hidden = false; out.textContent = '';
+  sfx.rumble(4);
   let op = '';
   try { op = (typeof admin !== 'undefined' && admin.codename) || ''; } catch {}
   const lines = [
