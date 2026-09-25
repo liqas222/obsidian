@@ -108,6 +108,7 @@ function openContact(id) {
     <form class="form" id="contact-form">
       ${f('first', 'Vorname')}${f('last', 'Nachname')}${f('relation', 'Beziehung (Familie, Freund…)')}
       ${f('birthday', 'Geburtstag', 'date')}${f('email', 'E-Mail', 'email')}
+      <label class="ac full">Adresse suchen<input id="addr-search" placeholder="Straße, Ort eintippen…" autocomplete="off"></label>
       ${f('street', 'Straße & Nr.')}${f('zip', 'PLZ')}${f('city', 'Ort')}${f('country', 'Land')}
       ${subHTML('phones', c.phones || [])}
       ${subHTML('vehicles', c.vehicles || [])}
@@ -115,6 +116,11 @@ function openContact(id) {
       <div class="actions"><button>SPEICHERN</button><button type="button" id="showmap">⌖ AUF KARTE ZEIGEN</button><button type="button" class="danger" id="del">LÖSCHEN</button></div>
     </form>`;
   const form = $('#contact-form');
+  autocomplete($('#addr-search'), r => {
+    ['street', 'zip', 'city', 'country'].forEach(k => { form.elements[k].value = r[k]; });
+    c.geo = { q: [r.street, r.zip, r.city, r.country].filter(Boolean).join(', '), lat: r.lat, lon: r.lon };
+    $('#addr-search').value = '';
+  });
   form.querySelectorAll('.sub').forEach(sub => {
     const key = sub.dataset.sub;
     sub.querySelector('.add').onclick = () => {
@@ -168,6 +174,10 @@ function fillAdmin() {
   [...f.elements].forEach(el => { if (el.name) el.value = admin[el.name] ?? ''; });
   $('#sys-form').aisKey.value = sys.aisKey ?? '';
 }
+autocomplete($('#admin-form').homeAddr, r => {
+  $('#admin-form').homeAddr.value = r.label;
+  admin.homeGeo = { lat: r.lat, lon: r.lon };
+});
 $('#admin-form').onsubmit = async e => {
   e.preventDefault();
   new FormData(e.target).forEach((v, k) => { admin[k] = v.trim(); });
@@ -195,7 +205,7 @@ AIS-KEY    ${sys.aisKey ? 'GESETZT' : 'FEHLT'}`;
 }
 
 /* ---------- Lagekarte ---------- */
-let map, layers = {}, timers = {}, aisSocket = null;
+let map, layers = {}, timers = {};
 const ships = new Map();
 function feed(msg) {
   const el = $('#feed');
@@ -204,18 +214,18 @@ function feed(msg) {
 }
 function initMap() {
   if (map) { map.invalidateSize(); return; }
-  const center = (admin.home || '').split(',').map(Number);
-  map = L.map('map', { worldCopyJump: true }).setView(center.length === 2 && center.every(isFinite) ? center : [51, 10], 6);
+  map = L.map('map', { worldCopyJump: true }).setView(admin.homeGeo ? [admin.homeGeo.lat, admin.homeGeo.lon] : [51, 10], admin.homeGeo ? 9 : 6);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(map);
   document.querySelectorAll('.layers input[data-layer]').forEach(cb => cb.onchange = () => toggle(cb.dataset.layer, cb.checked));
-  map.on('moveend', () => { if (layers.flights) loadFlights(); if (aisSocket) subscribeAis(); });
+  let mv;
+  map.on('moveend', () => { clearTimeout(mv); mv = setTimeout(() => { if (layers.flights) loadFlights(); if (layers.ships) loadShips(); }, 800); });
   feed('LAGEKARTE ONLINE');
 }
 function toggle(name, on) {
   if (!on) {
     clearInterval(timers[name]);
     if (layers[name]) { map.removeLayer(layers[name]); delete layers[name]; }
-    if (name === 'ships' && aisSocket) { aisSocket.close(); aisSocket = null; ships.clear(); }
+    if (name === 'ships') ships.clear();
     const c = $('#c-' + name); if (c) c.textContent = '';
     feed(name.toUpperCase() + ' AUS');
     return;
@@ -228,27 +238,28 @@ function toggle(name, on) {
     quakes: () => { loadQuakes(); timers.quakes = setInterval(loadQuakes, 300000); },
     iss: () => { loadIss(); timers.iss = setInterval(loadIss, 5000); },
     night: () => { timers.night = setInterval(() => layers.night && layers.night.setTime(), 60000); },
-    ships: startAis,
+    ships: () => { loadShips(); timers.ships = setInterval(loadShips, 60000); },
   })[name]();
 }
 const icon = (cls, ch, rot = 0) => L.divIcon({ className: '', html: `<div class="${cls}" style="transform:rotate(${rot}deg)">${ch}</div>`, iconSize: [16, 16], iconAnchor: [8, 8] });
 
 async function loadFlights() {
-  const b = map.getBounds();
-  const url = `https://opensky-network.org/api/states/all?lamin=${b.getSouth()}&lomin=${b.getWest()}&lamax=${b.getNorth()}&lomax=${b.getEast()}`;
+  const b = map.getBounds(), c = map.getCenter();
+  const dist = Math.min(250, Math.ceil(c.distanceTo(b.getNorthEast()) / 1852));
   try {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const r = await fetch(`/api/flights?lat=${c.lat.toFixed(3)}&lon=${c.lng.toFixed(3)}&dist=${dist}`);
     const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
     if (!layers.flights) return;
     layers.flights.clearLayers();
-    (d.states || []).filter(s => s[5] != null && s[6] != null).slice(0, 1500).forEach(s => {
-      L.marker([s[6], s[5]], { icon: icon('plane', '✈', (s[10] || 0) - 90) })
-        .bindPopup(`<b>${esc((s[1] || '').trim() || s[0])}</b><br>Herkunft: ${esc(s[2])}<br>Höhe: ${s[7] ? Math.round(s[7]) + ' m' : '—'}<br>Speed: ${s[9] ? Math.round(s[9] * 3.6) + ' km/h' : '—'}<br>Kurs: ${s[10] ? Math.round(s[10]) + '°' : '—'}<br>${s[8] ? 'AM BODEN' : 'IN DER LUFT'}`)
+    d.ac.slice(0, 1500).forEach(a => {
+      L.marker([a.lat, a.lon], { icon: icon('plane', '✈', (a.track || 0) - 90) })
+        .bindPopup(`<b>${esc(a.call || a.hex)}</b><br>Kennung: ${esc(a.reg || '—')}<br>Typ: ${esc(a.type || '—')}<br>Höhe: ${a.alt === 'ground' ? 'AM BODEN' : a.alt ? Math.round(a.alt * 0.3048) + ' m' : '—'}<br>Speed: ${a.speed ? Math.round(a.speed * 1.852) + ' km/h' : '—'}<br>Kurs: ${a.track != null ? Math.round(a.track) + '°' : '—'}<br>Squawk: ${esc(a.squawk || '—')}`)
         .addTo(layers.flights);
     });
-    $('#c-flights').textContent = `(${(d.states || []).length})`;
-  } catch (e) { feed('FLÜGE: ' + e.message + ' (OpenSky-Limit?)'); }
+    $('#c-flights').textContent = `(${d.ac.length})`;
+    if (dist >= 250) feed('FLÜGE: NUR 460 KM UM KARTENMITTE – FÜR MEHR REINZOOMEN/VERSCHIEBEN');
+  } catch (e) { feed('FLÜGE: ' + e.message); }
 }
 async function loadQuakes() {
   try {
@@ -264,35 +275,68 @@ async function loadQuakes() {
     $('#c-quakes').textContent = `(${d.features.length})`;
   } catch (e) { feed('BEBEN: ' + e.message); }
 }
+let issFirst = true;
 async function loadIss() {
   try {
-    const d = await (await fetch('https://api.wheretheiss.at/v1/satellites/25544')).json();
+    const r = await fetch('/api/iss'), d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
     if (!layers.iss) return;
     layers.iss.clearLayers();
-    L.marker([d.latitude, d.longitude], { icon: icon('iss', '✦') })
-      .bindPopup(`<b>ISS</b><br>Höhe: ${Math.round(d.altitude)} km<br>Speed: ${Math.round(d.velocity)} km/h`).addTo(layers.iss);
+    const m = L.marker([d.latitude, d.longitude], { icon: icon('iss', '✦') })
+      .bindPopup(`<b>ISS</b><br>${d.latitude.toFixed(2)}, ${d.longitude.toFixed(2)}<br>Höhe: ${Math.round(d.altitude)} km<br>Speed: ${Math.round(d.velocity)} km/h`).addTo(layers.iss);
+    if (issFirst) { issFirst = false; map.flyTo([d.latitude, d.longitude], 3); m.openPopup(); feed('ISS GEORTET'); }
   } catch (e) { feed('ISS: ' + e.message); }
 }
-function startAis() {
-  if (!sys.aisKey) { feed('AIS: KEIN API-KEY – im Admin-Bereich eintragen'); return; }
-  aisSocket = new WebSocket('wss://stream.aisstream.io/v0/stream');
-  aisSocket.onopen = () => { feed('AIS: VERBUNDEN'); subscribeAis(); };
-  aisSocket.onerror = () => feed('AIS: VERBINDUNGSFEHLER');
-  aisSocket.onmessage = async ev => {
-    const txt = typeof ev.data === 'string' ? ev.data : await ev.data.text();
-    const m = JSON.parse(txt), meta = m.MetaData, pos = m.Message?.PositionReport;
-    if (!meta || !pos || !layers.ships) return;
-    const key = meta.MMSI, ll = [meta.latitude, meta.longitude];
-    const html = `<b>${esc((meta.ShipName || '').trim() || 'MMSI ' + key)}</b><br>MMSI: ${key}<br>Speed: ${pos.Sog} kn<br>Kurs: ${pos.Cog}°`;
-    if (ships.has(key)) ships.get(key).setLatLng(ll).setPopupContent(html);
-    else ships.set(key, L.marker(ll, { icon: icon('ship', '▲', pos.TrueHeading < 360 ? pos.TrueHeading : pos.Cog) }).bindPopup(html).addTo(layers.ships));
-    $('#c-ships').textContent = `(${ships.size})`;
-  };
-}
-function subscribeAis() {
-  if (!aisSocket || aisSocket.readyState !== 1) return;
+async function loadShips() {
   const b = map.getBounds();
-  aisSocket.send(JSON.stringify({ APIKey: sys.aisKey, BoundingBoxes: [[[b.getSouth(), b.getWest()], [b.getNorth(), b.getEast()]]], FilterMessageTypes: ['PositionReport'] }));
+  feed('AIS: SCANNE…');
+  try {
+    const r = await fetch(`/api/ships?bbox=${[b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(x => x.toFixed(3))}`, { headers: sys.aisKey ? { 'x-ais-key': sys.aisKey } : {} });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+    if (!layers.ships) return;
+    d.ships.forEach(s => {
+      const html = `<b>${esc(s.name || 'MMSI ' + s.mmsi)}</b><br>MMSI: ${s.mmsi}<br>Speed: ${s.sog} kn<br>Kurs: ${s.cog}°`;
+      if (ships.has(s.mmsi)) ships.get(s.mmsi).setLatLng([s.lat, s.lon]).setPopupContent(html);
+      else ships.set(s.mmsi, L.marker([s.lat, s.lon], { icon: icon('ship', '▲', s.hdg < 360 ? s.hdg : s.cog) }).bindPopup(html).addTo(layers.ships));
+    });
+    $('#c-ships').textContent = `(${ships.size})`;
+    feed(`AIS: ${d.ships.length} SCHIFFE GEMELDET` + (d.ships.length ? '' : ' – AUF KÜSTE/HAFEN ZOOMEN'));
+  } catch (e) { feed('AIS: ' + e.message + (e.message.includes('KEY') ? ' – IM ADMIN-BEREICH EINTRAGEN' : '')); }
+}
+
+/* ---------- Adressvorschläge ---------- */
+function autocomplete(input, onPick) {
+  const list = document.createElement('div');
+  list.className = 'ac-list'; list.hidden = true;
+  input.after(list);
+  let timer, results = [], idx = -1;
+  const close = () => { list.hidden = true; idx = -1; };
+  const pick = i => { if (results[i]) { onPick(results[i]); close(); } };
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 3) return close();
+    timer = setTimeout(async () => {
+      try {
+        const d = await (await fetch('/api/geocode?q=' + encodeURIComponent(q))).json();
+        results = d.results || [];
+        list.innerHTML = results.map((r, i) => `<div data-i="${i}">${esc(r.label)}</div>`).join('') || '<div class="dim">KEINE TREFFER</div>';
+        list.hidden = false; idx = -1;
+      } catch { close(); }
+    }, 300);
+  });
+  list.addEventListener('mousedown', e => { const el = e.target.closest('[data-i]'); if (el) { e.preventDefault(); pick(+el.dataset.i); } });
+  input.addEventListener('keydown', e => {
+    if (list.hidden) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      idx = (idx + (e.key === 'ArrowDown' ? 1 : -1) + results.length) % results.length;
+      list.querySelectorAll('[data-i]').forEach((el, i) => el.classList.toggle('on', i === idx));
+    } else if (e.key === 'Enter') { e.preventDefault(); pick(Math.max(idx, 0)); }
+    else if (e.key === 'Escape') close();
+  });
+  input.addEventListener('blur', () => setTimeout(close, 150));
 }
 
 /* ---------- Adresse auf Karte ---------- */
@@ -303,9 +347,9 @@ async function showOnMap(c) {
   document.querySelector('nav button[data-tab="lage"]').click();
   try {
     if (!c.geo || c.geo.q !== q) {
-      const r = await (await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q))).json();
+      const r = (await (await fetch('/api/geocode?q=' + encodeURIComponent(q))).json()).results || [];
       if (!r.length) throw new Error('ADRESSE NICHT GEFUNDEN');
-      c.geo = { q, lat: +r[0].lat, lon: +r[0].lon }; saveContact(c);
+      c.geo = { q, lat: r[0].lat, lon: r[0].lon }; saveContact(c);
     }
     if (target) map.removeLayer(target);
     target = L.layerGroup([

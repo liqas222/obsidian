@@ -1,0 +1,6 @@
+{
+  "name": "blackwing",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "22.x" }
+}

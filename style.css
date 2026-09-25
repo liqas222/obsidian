@@ -52,3 +52,8 @@ nav{display:flex;gap:6px;flex:1}nav button{border-color:var(--line);color:var(--
 .target{color:var(--acc);font-size:30px;line-height:30px;text-shadow:0 0 10px var(--acc);animation:spin 4s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .pulse{animation:pulse 1.6s ease-out infinite}@keyframes pulse{0%{stroke-opacity:1}100%{stroke-opacity:.1}}
+body,input,textarea,button{text-transform:uppercase}
+.ac{position:relative}
+.ac-list{position:absolute;left:0;right:0;top:100%;z-index:50;background:var(--panel);border:1px solid var(--acc);max-height:240px;overflow:auto}
+.ac-list div{padding:6px 8px;cursor:pointer;font-size:12px;color:var(--fg)}
+.ac-list div:hover,.ac-list div.on{background:var(--acc);color:var(--bg)}
