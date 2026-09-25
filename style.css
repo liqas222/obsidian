@@ -1,4 +1,5 @@
 :root{--bg:#070b08;--panel:#0d1410;--line:#1f3a26;--fg:#b8f5c4;--acc:#39ff6a;--warn:#ffb000;--red:#ff3b3b;--dim:#5f8a69}
+[hidden]{display:none!important}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:14px/1.45 ui-monospace,Consolas,monospace;letter-spacing:.03em}
 .dim{color:var(--dim)}.small{font-size:12px}.center{text-align:center;margin-top:20vh}
