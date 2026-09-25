@@ -3,9 +3,9 @@
 export const config = { maxDuration: 15 };
 export default async function handler(req, res) {
   const key = process.env.AISSTREAM_KEY || req.headers['x-ais-key'];
-  if (!key) return res.status(400).json({ error: 'KEIN AIS-KEY' });
+  if (!key) return res.status(400).json({ error: 'NO AIS KEY' });
   const [s, w, n, e] = String(req.query.bbox || '').split(',').map(Number);
-  if (![s, w, n, e].every(isFinite)) return res.status(400).json({ error: 'bbox fehlt' });
+  if (![s, w, n, e].every(isFinite)) return res.status(400).json({ error: 'bbox missing' });
   const ships = {};
   await new Promise(resolve => {
     const ws = new WebSocket('wss://stream.aisstream.io/v0/stream');

@@ -1,4 +1,4 @@
-/* PROJECT BLACKWING – Daten liegen in Supabase, Zugriff nur mit dem Zugangscode. */
+/* PROJECT BLACKWING – Data lives in Supabase, access only with the access code. */
 const SUPABASE_URL = 'https://mwzmezrubzlxcaaqmojf.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_vg6IQ24fI7rQrGgSQt_T9Q_J2-2WphA';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -16,7 +16,7 @@ let code = sessionStorage.getItem('bw_code') || '';
 function status(msg, err) { const el = $('#gate-msg'); el.textContent = msg; el.style.color = err ? 'var(--red)' : ''; }
 async function rpc(fn, args = {}) {
   const { data, error } = await db.rpc(fn, { p_code: code, ...args });
-  if (error || data === false) { alert('SPEICHERFEHLER: ' + (error?.message || 'Code ungültig')); throw error || new Error('denied'); }
+  if (error || data === false) { alert('SAVE ERROR: ' + (error?.message || 'Invalid code')); throw error || new Error('denied'); }
   return data;
 }
 const saveContact = c => rpc('bw_save_contact', { p_id: c.id, p_data: c });
@@ -31,15 +31,15 @@ async function loadAll() {
 }
 
 /* ---------- Zugang ---------- */
-const GATE_ERR = { denied: '✖ ZUGRIFF VERWEIGERT', locked: '✖ GESPERRT – 15 MIN WARTEN', short: '✖ MINDESTENS 4 ZEICHEN' };
+const GATE_ERR = { denied: '✖ ACCESS DENIED', locked: '✖ LOCKED – WAIT 15 MIN', short: '✖ AT LEAST 4 CHARACTERS' };
 async function login() {
   code = $('#gate-pass').value;
   if (!code) return;
-  status('PRÜFE…');
+  status('VERIFYING…');
   try {
     const st = await loadAll();
     sessionStorage.setItem('bw_code', code);
-    if (st === 'created') alert('Code gesetzt. Er gilt ab jetzt dauerhaft – gut merken!');
+    if (st === 'created') alert('Code set. It is now permanent – remember it!');
     enter();
   } catch (e) {
     status(GATE_ERR[e.message] || '✖ ' + e.message, true);
@@ -79,10 +79,10 @@ function renderList() {
       <b>${esc(c.last).toUpperCase()}${c.last && c.first ? ', ' : ''}${esc(c.first)}</b><br>
       ${c.relation ? `<span class="tag">${esc(c.relation)}</span>` : ''}
       ${(c.vehicles || []).filter(v => v.plate).map(v => `<span class="tag">${esc(v.plate)}</span>`).join('')}
-    </li>`).join('') || '<li class="dim">KEINE EINTRÄGE</li>';
+    </li>`).join('') || '<li class="dim">NO ENTRIES</li>';
   $('#contact-list').querySelectorAll('li[data-id]').forEach(li => li.onclick = () => openContact(li.dataset.id));
   const soon = contacts.map(c => [c, daysToBirthday(c.birthday)]).filter(([, d]) => d !== null && d <= 14).sort((a, b) => a[1] - b[1]);
-  $('#bdays').innerHTML = soon.map(([c, d]) => `🎂 ${esc(c.first)} ${esc(c.last)} – ${d === 0 ? 'HEUTE' : 'in ' + d + ' T'}`).join('<br>');
+  $('#bdays').innerHTML = soon.map(([c, d]) => `🎂 ${esc(c.first)} ${esc(c.last)} – ${d === 0 ? 'TODAY' : 'in ' + d + ' d'}`).join('<br>');
 }
 $('#search').oninput = renderList;
 $('#new-contact').onclick = () => {
@@ -91,29 +91,29 @@ $('#new-contact').onclick = () => {
 };
 
 const SUB = {
-  phones: { title: 'TELEFONNUMMERN', fields: [['type', 'Typ (mobil/fest)'], ['number', 'Nummer']] },
-  vehicles: { title: 'FAHRZEUGE', fields: [['make', 'Marke/Modell'], ['color', 'Farbe'], ['plate', 'Kennzeichen']] },
+  phones: { title: 'PHONE NUMBERS', fields: [['type', 'Type (mobile/landline)'], ['number', 'Number']] },
+  vehicles: { title: 'VEHICLES', fields: [['make', 'Make/model'], ['color', 'Color'], ['plate', 'License plate']] },
 };
 function subHTML(key, items) {
   const s = SUB[key];
   const row = it => `<div class="sub-item">${s.fields.map(([f, l]) => `<input data-f="${f}" placeholder="${l}" value="${esc(it[f])}">`).join('')}<button type="button" class="danger rm">✕</button></div>`;
-  return `<div class="sub" data-sub="${key}"><h3>${s.title}</h3><div class="items">${items.map(row).join('')}</div><button type="button" class="add">+ HINZUFÜGEN</button></div>`;
+  return `<div class="sub" data-sub="${key}"><h3>${s.title}</h3><div class="items">${items.map(row).join('')}</div><button type="button" class="add">+ ADD</button></div>`;
 }
 function openContact(id) {
   selected = id;
   const c = contacts.find(x => x.id === id);
   const f = (name, label, type = 'text') => `<label>${label}<input name="${name}" type="${type}" value="${esc(c[name])}"></label>`;
   $('#detail').innerHTML = `
-    <h3>KONTAKT #${c.id}</h3>
+    <h3>CONTACT #${c.id}</h3>
     <form class="form" id="contact-form">
-      ${f('first', 'Vorname')}${f('last', 'Nachname')}${f('relation', 'Beziehung (Familie, Freund…)')}
-      ${f('birthday', 'Geburtstag', 'date')}${f('email', 'E-Mail', 'email')}
-      <label class="ac full">Adresse suchen<input id="addr-search" placeholder="Straße, Ort eintippen…" autocomplete="off"></label>
-      ${f('street', 'Straße & Nr.')}${f('zip', 'PLZ')}${f('city', 'Ort')}${f('country', 'Land')}
+      ${f('first', 'First name')}${f('last', 'Last name')}${f('relation', 'Relation (family, friend…)')}
+      ${f('birthday', 'Birthday', 'date')}${f('email', 'Email', 'email')}
+      <label class="ac full">Search address<input id="addr-search" placeholder="Type street, city…" autocomplete="off"></label>
+      ${f('street', 'Street & no.')}${f('zip', 'ZIP / postcode')}${f('city', 'City')}${f('country', 'Country')}
       ${subHTML('phones', c.phones || [])}
       ${subHTML('vehicles', c.vehicles || [])}
-      <label class="full">Notizen<textarea name="notes" rows="5">${esc(c.notes)}</textarea></label>
-      <div class="actions"><button>SPEICHERN</button><button type="button" id="showmap">⌖ AUF KARTE ZEIGEN</button><button type="button" class="danger" id="del">LÖSCHEN</button></div>
+      <label class="full">Notes<textarea name="notes" rows="5">${esc(c.notes)}</textarea></label>
+      <div class="actions"><button>SAVE</button><button type="button" id="showmap">⌖ SHOW ON MAP</button><button type="button" class="danger" id="del">DELETE</button></div>
     </form>`;
   const form = $('#contact-form');
   autocomplete($('#addr-search'), r => {
@@ -137,13 +137,13 @@ function openContact(id) {
         .filter(o => Object.values(o).some(Boolean));
     });
     c.updated = new Date().toISOString();
-    await saveContact(c); renderList(); flash('GESPEICHERT');
+    await saveContact(c); renderList(); flash('SAVED');
   };
   $('#showmap').onclick = () => showOnMap(c);
   $('#del').onclick = async () => {
-    if (!confirm('Kontakt wirklich löschen?')) return;
+    if (!confirm('Really delete this contact?')) return;
     await deleteContact(id); contacts = contacts.filter(x => x.id !== id);
-    selected = null; $('#detail').innerHTML = '<p class="dim center">KONTAKT GELÖSCHT</p>'; renderList();
+    selected = null; $('#detail').innerHTML = '<p class="dim center">CONTACT DELETED</p>'; renderList();
   };
   renderList();
 }
@@ -159,12 +159,12 @@ $('#import').onchange = async e => {
   try {
     const d = JSON.parse(await e.target.files[0].text());
     if (!Array.isArray(d.contacts)) throw 0;
-    if (!confirm(`${d.contacts.length} Kontakte importieren? Gleiche IDs werden überschrieben.`)) return;
+    if (!confirm(`Import ${d.contacts.length} contacts? Matching IDs will be overwritten.`)) return;
     for (const c of d.contacts) await saveContact(c);
     if (d.admin) { admin = d.admin; await saveProfile(); fillAdmin(); }
     await loadAll();
     renderList();
-  } catch { alert('Ungültige Datei.'); }
+  } catch { alert('Invalid file.'); }
   e.target.value = '';
 };
 
@@ -190,7 +190,7 @@ $('#sys-form').onsubmit = async e => {
   sysInfo();
 };
 $('#wipe').onclick = async () => {
-  if (prompt('Zum Bestätigen LÖSCHEN eingeben:') !== 'LÖSCHEN') return;
+  if (prompt('Type DELETE to confirm:') !== 'DELETE') return;
   await rpc('bw_wipe');
   location.reload();
 };
@@ -198,10 +198,10 @@ function sysInfo() {
   const bytes = JSON.stringify(contacts).length + JSON.stringify(admin).length;
   $('#sysinfo').textContent =
 `OPERATOR   ${admin.codename || '—'}
-KONTAKTE   ${contacts.length}
-FAHRZEUGE  ${contacts.reduce((n, c) => n + (c.vehicles || []).length, 0)}
-SPEICHER   ${(bytes / 1024).toFixed(1)} KB (Supabase)
-AIS-KEY    ${sys.aisKey ? 'GESETZT' : 'FEHLT'}`;
+CONTACTS   ${contacts.length}
+VEHICLES   ${contacts.reduce((n, c) => n + (c.vehicles || []).length, 0)}
+STORAGE    ${(bytes / 1024).toFixed(1)} KB (Supabase)
+AIS-KEY    ${sys.aisKey ? 'SET' : 'MISSING'}`;
 }
 
 /* ---------- Lagekarte ---------- */
@@ -219,7 +219,7 @@ function initMap() {
   document.querySelectorAll('.layers input[data-layer]').forEach(cb => cb.onchange = () => toggle(cb.dataset.layer, cb.checked));
   let mv;
   map.on('moveend', () => { clearTimeout(mv); mv = setTimeout(() => { if (layers.flights) loadFlights(); if (layers.ships) loadShips(); }, 800); });
-  feed('LAGEKARTE ONLINE');
+  feed('OPS MAP ONLINE');
 }
 function toggle(name, on) {
   if (!on) {
@@ -227,12 +227,12 @@ function toggle(name, on) {
     if (layers[name]) { map.removeLayer(layers[name]); delete layers[name]; }
     if (name === 'ships') ships.clear();
     const c = $('#c-' + name); if (c) c.textContent = '';
-    feed(name.toUpperCase() + ' AUS');
+    feed(name.toUpperCase() + ' OFF');
     return;
   }
   layers[name] = name === 'night' ? L.terminator({ fillOpacity: .35, color: '#000' }) : L.layerGroup();
   layers[name].addTo(map);
-  feed(name.toUpperCase() + ' AN');
+  feed(name.toUpperCase() + ' ON');
   ({
     flights: () => { loadFlights(); timers.flights = setInterval(loadFlights, 15000); },
     quakes: () => { loadQuakes(); timers.quakes = setInterval(loadQuakes, 300000); },
@@ -254,12 +254,12 @@ async function loadFlights() {
     layers.flights.clearLayers();
     d.ac.slice(0, 1500).forEach(a => {
       L.marker([a.lat, a.lon], { icon: icon('plane', '✈', (a.track || 0) - 90) })
-        .bindPopup(`<b>${esc(a.call || a.hex)}</b><br>Kennung: ${esc(a.reg || '—')}<br>Typ: ${esc(a.type || '—')}<br>Höhe: ${a.alt === 'ground' ? 'AM BODEN' : a.alt ? Math.round(a.alt * 0.3048) + ' m' : '—'}<br>Speed: ${a.speed ? Math.round(a.speed * 1.852) + ' km/h' : '—'}<br>Kurs: ${a.track != null ? Math.round(a.track) + '°' : '—'}<br>Squawk: ${esc(a.squawk || '—')}`)
+        .bindPopup(`<b>${esc(a.call || a.hex)}</b><br>Reg: ${esc(a.reg || '—')}<br>Type: ${esc(a.type || '—')}<br>Altitude: ${a.alt === 'ground' ? 'ON GROUND' : a.alt ? Math.round(a.alt * 0.3048) + ' m' : '—'}<br>Speed: ${a.speed ? Math.round(a.speed * 1.852) + ' km/h' : '—'}<br>Heading: ${a.track != null ? Math.round(a.track) + '°' : '—'}<br>Squawk: ${esc(a.squawk || '—')}`)
         .addTo(layers.flights);
     });
     $('#c-flights').textContent = `(${d.ac.length})`;
-    if (dist >= 250) feed('FLÜGE: NUR 460 KM UM KARTENMITTE – FÜR MEHR REINZOOMEN/VERSCHIEBEN');
-  } catch (e) { feed('FLÜGE: ' + e.message); }
+    if (dist >= 250) feed('FLIGHTS: ONLY 460 KM AROUND MAP CENTER – PAN/ZOOM FOR MORE');
+  } catch (e) { feed('FLIGHTS: ' + e.message); }
 }
 async function loadQuakes() {
   try {
@@ -269,11 +269,11 @@ async function loadQuakes() {
     d.features.forEach(q => {
       const [lon, lat, depth] = q.geometry.coordinates, m = q.properties.mag || 0;
       L.circleMarker([lat, lon], { radius: 3 + m * 2, color: m >= 5 ? '#ff3b3b' : '#ffb000', weight: 1, fillOpacity: .3 })
-        .bindPopup(`<b>M ${m.toFixed(1)}</b><br>${esc(q.properties.place)}<br>Tiefe: ${depth} km<br>${new Date(q.properties.time).toLocaleString('de-DE')}`)
+        .bindPopup(`<b>M ${m.toFixed(1)}</b><br>${esc(q.properties.place)}<br>Depth: ${depth} km<br>${new Date(q.properties.time).toLocaleString('en-GB')}`)
         .addTo(layers.quakes);
     });
     $('#c-quakes').textContent = `(${d.features.length})`;
-  } catch (e) { feed('BEBEN: ' + e.message); }
+  } catch (e) { feed('QUAKES: ' + e.message); }
 }
 let issFirst = true;
 async function loadIss() {
@@ -283,26 +283,26 @@ async function loadIss() {
     if (!layers.iss) return;
     layers.iss.clearLayers();
     const m = L.marker([d.latitude, d.longitude], { icon: icon('iss', '✦') })
-      .bindPopup(`<b>ISS</b><br>${d.latitude.toFixed(2)}, ${d.longitude.toFixed(2)}<br>Höhe: ${Math.round(d.altitude)} km<br>Speed: ${Math.round(d.velocity)} km/h`).addTo(layers.iss);
-    if (issFirst) { issFirst = false; map.flyTo([d.latitude, d.longitude], 3); m.openPopup(); feed('ISS GEORTET'); }
+      .bindPopup(`<b>ISS</b><br>${d.latitude.toFixed(2)}, ${d.longitude.toFixed(2)}<br>Altitude: ${Math.round(d.altitude)} km<br>Speed: ${Math.round(d.velocity)} km/h`).addTo(layers.iss);
+    if (issFirst) { issFirst = false; map.flyTo([d.latitude, d.longitude], 3); m.openPopup(); feed('ISS LOCATED'); }
   } catch (e) { feed('ISS: ' + e.message); }
 }
 async function loadShips() {
   const b = map.getBounds();
-  feed('AIS: SCANNE…');
+  feed('AIS: SCANNING…');
   try {
     const r = await fetch(`/api/ships?bbox=${[b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(x => x.toFixed(3))}`, { headers: sys.aisKey ? { 'x-ais-key': sys.aisKey } : {} });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
     if (!layers.ships) return;
     d.ships.forEach(s => {
-      const html = `<b>${esc(s.name || 'MMSI ' + s.mmsi)}</b><br>MMSI: ${s.mmsi}<br>Speed: ${s.sog} kn<br>Kurs: ${s.cog}°`;
+      const html = `<b>${esc(s.name || 'MMSI ' + s.mmsi)}</b><br>MMSI: ${s.mmsi}<br>Speed: ${s.sog} kn<br>Heading: ${s.cog}°`;
       if (ships.has(s.mmsi)) ships.get(s.mmsi).setLatLng([s.lat, s.lon]).setPopupContent(html);
       else ships.set(s.mmsi, L.marker([s.lat, s.lon], { icon: icon('ship', '▲', s.hdg < 360 ? s.hdg : s.cog) }).bindPopup(html).addTo(layers.ships));
     });
     $('#c-ships').textContent = `(${ships.size})`;
-    feed(`AIS: ${d.ships.length} SCHIFFE GEMELDET` + (d.ships.length ? '' : ' – AUF KÜSTE/HAFEN ZOOMEN'));
-  } catch (e) { feed('AIS: ' + e.message + (e.message.includes('KEY') ? ' – IM ADMIN-BEREICH EINTRAGEN' : '')); }
+    feed(`AIS: ${d.ships.length} SHIPS REPORTED` + (d.ships.length ? '' : ' – ZOOM TO A COAST/PORT'));
+  } catch (e) { feed('AIS: ' + e.message + (e.message.includes('KEY') ? ' – ENTER IT IN ADMIN' : '')); }
 }
 
 /* ---------- Adressvorschläge ---------- */
@@ -321,7 +321,7 @@ function autocomplete(input, onPick) {
       try {
         const d = await (await fetch('/api/geocode?q=' + encodeURIComponent(q))).json();
         results = d.results || [];
-        list.innerHTML = results.map((r, i) => `<div data-i="${i}">${esc(r.label)}</div>`).join('') || '<div class="dim">KEINE TREFFER</div>';
+        list.innerHTML = results.map((r, i) => `<div data-i="${i}">${esc(r.label)}</div>`).join('') || '<div class="dim">NO RESULTS</div>';
         list.hidden = false; idx = -1;
       } catch { close(); }
     }, 300);
@@ -343,12 +343,12 @@ function autocomplete(input, onPick) {
 let target = null;
 async function showOnMap(c) {
   const q = [c.street, c.zip, c.city, c.country].filter(Boolean).join(', ');
-  if (!q) { alert('Keine Adresse hinterlegt.'); return; }
+  if (!q) { alert('No address saved.'); return; }
   document.querySelector('nav button[data-tab="lage"]').click();
   try {
     if (!c.geo || c.geo.q !== q) {
       const r = (await (await fetch('/api/geocode?q=' + encodeURIComponent(q))).json()).results || [];
-      if (!r.length) throw new Error('ADRESSE NICHT GEFUNDEN');
+      if (!r.length) throw new Error('ADDRESS NOT FOUND');
       c.geo = { q, lat: r[0].lat, lon: r[0].lon }; saveContact(c);
     }
     if (target) map.removeLayer(target);
@@ -357,7 +357,7 @@ async function showOnMap(c) {
       L.marker([c.geo.lat, c.geo.lon], { icon: L.divIcon({ className: '', html: '<div class="target">⌖</div>', iconSize: [30, 30], iconAnchor: [15, 15] }) })
         .bindPopup(`<b>${esc(c.first)} ${esc(c.last).toUpperCase()}</b><br>${esc(q)}<br><span class="dim">${c.geo.lat.toFixed(5)}, ${c.geo.lon.toFixed(5)}</span>`),
     ]).addTo(map);
-    feed('ZIEL ERFASST: ' + [c.first, c.last].filter(Boolean).join(' '));
+    feed('TARGET ACQUIRED: ' + [c.first, c.last].filter(Boolean).join(' '));
     map.flyTo([c.geo.lat, c.geo.lon], 17, { duration: 2.5 });
     map.once('moveend', () => target.eachLayer(l => l.openPopup && l.openPopup()));
   } catch (e) { feed('GEOCODING: ' + e.message); }

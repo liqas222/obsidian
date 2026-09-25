@@ -2,7 +2,7 @@
 export default async function handler(req, res) {
   const { lat, lon, dist } = req.query;
   const d = Math.min(Math.max(Math.round(+dist || 100), 1), 250);
-  if (!isFinite(+lat) || !isFinite(+lon)) return res.status(400).json({ error: 'lat/lon fehlt' });
+  if (!isFinite(+lat) || !isFinite(+lon)) return res.status(400).json({ error: 'lat/lon missing' });
   try {
     const r = await fetch(`https://api.adsb.lol/v2/lat/${+lat}/lon/${+lon}/dist/${d}`, { headers: { 'User-Agent': 'blackwing-cc' } });
     if (!r.ok) return res.status(502).json({ error: 'adsb.lol HTTP ' + r.status });

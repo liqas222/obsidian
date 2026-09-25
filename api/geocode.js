@@ -3,7 +3,7 @@ export default async function handler(req, res) {
   const q = String(req.query.q || '').trim();
   if (q.length < 3) return res.json({ results: [] });
   try {
-    const r = await fetch(`https://photon.komoot.io/api/?limit=6&lang=de&q=${encodeURIComponent(q)}`, { headers: { 'User-Agent': 'blackwing-cc' } });
+    const r = await fetch(`https://photon.komoot.io/api/?limit=6&lang=en&q=${encodeURIComponent(q)}`, { headers: { 'User-Agent': 'blackwing-cc' } });
     if (!r.ok) return res.status(502).json({ error: 'HTTP ' + r.status });
     const j = await r.json();
     const results = j.features.map(f => {
