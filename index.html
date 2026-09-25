@@ -15,10 +15,11 @@
     <div class="stamp">STRENG GEHEIM</div>
     <h1>PROJEKT NACHTFALKE</h1>
     <p class="dim">LAGEZENTRUM // ZUGANG NUR FÜR BEFUGTE</p>
-    <p id="gate-msg">PASSPHRASE EINGEBEN</p>
-    <input id="gate-pass" type="password" autocomplete="current-password" placeholder="••••••••">
+    <p id="gate-msg">IDENTIFIKATION ERFORDERLICH</p>
+    <input id="gate-email" type="email" autocomplete="username" placeholder="KENNUNG (E-MAIL)">
+    <input id="gate-pass" type="password" autocomplete="current-password" placeholder="PASSWORT">
     <button id="gate-btn">AUTHENTIFIZIEREN</button>
-    <p class="dim small">Erster Start: die eingegebene Passphrase wird als Admin-Schlüssel gesetzt.</p>
+    <p class="small"><a href="#" id="gate-signup" class="dim">Erstzugang: Konto anlegen</a></p>
   </div>
 </section>
 
@@ -83,7 +84,7 @@
         <h3>SYSTEM</h3>
         <form id="sys-form" class="form">
           <label>AISStream.io API-Key<input name="aisKey" placeholder="kostenlos auf aisstream.io"></label>
-          <label>Neue Passphrase<input name="newPass" type="password" autocomplete="new-password"></label>
+          <label>Neues Passwort<input name="newPass" type="password" autocomplete="new-password"></label>
           <button>ÜBERNEHMEN</button>
         </form>
         <h3>STATUS</h3>
@@ -94,6 +95,7 @@
   </section>
 </main>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@joergdietrich/leaflet.terminator@1.1.0/L.Terminator.js"></script>
 <script src="app.js"></script>

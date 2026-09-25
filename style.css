@@ -11,7 +11,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--acc);box-shadow:0 0 6
 h1,h3{color:var(--acc);letter-spacing:.15em;margin:.2em 0 .6em}h3{font-size:13px;border-bottom:1px solid var(--line);padding-bottom:4px}
 #gate{display:grid;place-items:center;height:100vh}
 .gate-box{border:1px solid var(--acc);padding:40px;width:min(420px,92vw);text-align:center;background:var(--panel);box-shadow:0 0 40px rgba(57,255,106,.15);position:relative}
-.gate-box input{margin:12px 0;text-align:center}.gate-box button{width:100%}
+.gate-box input{margin:6px 0;text-align:center}.gate-box button{width:100%}
 .stamp{position:absolute;top:-14px;left:50%;transform:translateX(-50%) rotate(-3deg);background:var(--bg);color:var(--red);border:2px solid var(--red);padding:2px 10px;font-weight:bold;letter-spacing:.2em}
 header{display:flex;align-items:center;gap:16px;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
 .brand{color:var(--acc);font-weight:bold;letter-spacing:.2em}

@@ -1,40 +1,49 @@
-/* PROJEKT NACHTFALKE – alle Daten bleiben lokal im Browser (localStorage). */
-const K = { contacts: 'nf_contacts', admin: 'nf_admin', sys: 'nf_sys', pass: 'nf_pass' };
-const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
-const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+/* PROJEKT NACHTFALKE – Daten liegen in Supabase (pro Benutzer per Row Level Security geschützt). */
+const SUPABASE_URL = 'https://mwzmezrubzlxcaaqmojf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_vg6IQ24fI7rQrGgSQt_T9Q_J2-2WphA';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const uid = () => Math.random().toString(36).slice(2, 10).toUpperCase();
+const uid = () => crypto.randomUUID().slice(0, 8).toUpperCase();
 
-let contacts = load(K.contacts, []);
-let admin = load(K.admin, {});
-let sys = load(K.sys, {});
+let contacts = [];
+let admin = {};
+let sys = {};
 let selected = null;
 
-/* ---------- Zugang ---------- */
-async function hash(t) {
-  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('nachtfalke:' + t));
-  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+/* ---------- Persistenz ---------- */
+function status(msg, err) { const el = $('#gate-msg'); el.textContent = msg; el.style.color = err ? 'var(--red)' : ''; }
+async function check(p) { const { error } = await p; if (error) { alert('SPEICHERFEHLER: ' + error.message); throw error; } }
+const saveContact = c => check(db.from('contacts').upsert({ id: c.id, data: c, updated_at: new Date().toISOString() }));
+const deleteContact = id => check(db.from('contacts').delete().eq('id', id));
+const saveProfile = () => check(db.from('profiles').upsert({ admin, settings: sys, updated_at: new Date().toISOString() }));
+async function loadAll() {
+  const [c, p] = await Promise.all([db.from('contacts').select('data'), db.from('profiles').select('admin,settings').maybeSingle()]);
+  if (c.error || p.error) throw c.error || p.error;
+  contacts = c.data.map(r => r.data);
+  admin = p.data?.admin || {};
+  sys = p.data?.settings || {};
 }
-async function login() {
-  const p = $('#gate-pass').value;
-  if (!p) return;
-  const h = await hash(p), stored = localStorage.getItem(K.pass);
-  if (!stored) localStorage.setItem(K.pass, h);
-  else if (stored !== h) {
-    $('#gate-msg').textContent = '✖ ZUGRIFF VERWEIGERT';
-    $('#gate-msg').style.color = 'var(--red)';
-    $('#gate-pass').value = '';
-    return;
-  }
-  sessionStorage.setItem('nf_ok', '1');
+
+/* ---------- Zugang ---------- */
+async function auth(signup) {
+  const email = $('#gate-email').value.trim(), password = $('#gate-pass').value;
+  if (!email || !password) return;
+  status('VERBINDE…');
+  const { data, error } = signup ? await db.auth.signUp({ email, password }) : await db.auth.signInWithPassword({ email, password });
+  if (error) { status('✖ ' + error.message.toUpperCase(), true); $('#gate-pass').value = ''; return; }
+  if (!data.session) { status('BESTÄTIGUNGS-MAIL GESENDET – LINK ÖFFNEN, DANN EINLOGGEN'); return; }
   enter();
 }
-function enter() { $('#gate').hidden = true; $('#app').hidden = false; renderList(); fillAdmin(); }
-$('#gate-btn').onclick = login;
-$('#gate-pass').onkeydown = e => { if (e.key === 'Enter') login(); };
-$('#lock').onclick = () => { sessionStorage.removeItem('nf_ok'); location.reload(); };
-if (sessionStorage.getItem('nf_ok')) enter();
+async function enter() {
+  try { await loadAll(); } catch (e) { status('✖ ' + e.message, true); return; }
+  $('#gate').hidden = true; $('#app').hidden = false; renderList(); fillAdmin();
+}
+$('#gate-btn').onclick = () => auth(false);
+$('#gate-signup').onclick = e => { e.preventDefault(); auth(true); };
+$('#gate-pass').onkeydown = e => { if (e.key === 'Enter') auth(false); };
+$('#lock').onclick = async () => { await db.auth.signOut(); location.reload(); };
+db.auth.getSession().then(({ data }) => { if (data.session) enter(); });
 setInterval(() => { $('#utc').textContent = new Date().toISOString().slice(0, 19).replace('T', ' ') + 'Z'; }, 1000);
 
 /* ---------- Tabs ---------- */
@@ -71,7 +80,7 @@ function renderList() {
 $('#search').oninput = renderList;
 $('#new-contact').onclick = () => {
   const c = { id: uid(), created: new Date().toISOString(), phones: [], vehicles: [] };
-  contacts.push(c); save(K.contacts, contacts); openContact(c.id);
+  contacts.push(c); openContact(c.id);
 };
 
 const SUB = {
@@ -107,7 +116,7 @@ function openContact(id) {
     };
     bindRm(sub);
   });
-  form.onsubmit = e => {
+  form.onsubmit = async e => {
     e.preventDefault();
     new FormData(form).forEach((v, k) => { c[k] = v.trim(); });
     form.querySelectorAll('.sub').forEach(sub => {
@@ -115,12 +124,12 @@ function openContact(id) {
         .filter(o => Object.values(o).some(Boolean));
     });
     c.updated = new Date().toISOString();
-    save(K.contacts, contacts); renderList(); flash('GESPEICHERT');
+    await saveContact(c); renderList(); flash('GESPEICHERT');
   };
   $('#showmap').onclick = () => showOnMap(c);
-  $('#del').onclick = () => {
+  $('#del').onclick = async () => {
     if (!confirm('Kontakt wirklich löschen?')) return;
-    contacts = contacts.filter(x => x.id !== id); save(K.contacts, contacts);
+    await deleteContact(id); contacts = contacts.filter(x => x.id !== id);
     selected = null; $('#detail').innerHTML = '<p class="dim center">KONTAKT GELÖSCHT</p>'; renderList();
   };
   renderList();
@@ -137,9 +146,10 @@ $('#import').onchange = async e => {
   try {
     const d = JSON.parse(await e.target.files[0].text());
     if (!Array.isArray(d.contacts)) throw 0;
-    if (!confirm(`${d.contacts.length} Kontakte importieren? Bestehende Daten werden ersetzt.`)) return;
-    contacts = d.contacts; save(K.contacts, contacts);
-    if (d.admin) { admin = d.admin; save(K.admin, admin); fillAdmin(); }
+    if (!confirm(`${d.contacts.length} Kontakte importieren? Gleiche IDs werden überschrieben.`)) return;
+    await check(db.from('contacts').upsert(d.contacts.map(c => ({ id: c.id, data: c }))));
+    if (d.admin) { admin = d.admin; await saveProfile(); fillAdmin(); }
+    await loadAll();
     renderList();
   } catch { alert('Ungültige Datei.'); }
   e.target.value = '';
@@ -151,30 +161,35 @@ function fillAdmin() {
   [...f.elements].forEach(el => { if (el.name) el.value = admin[el.name] ?? ''; });
   $('#sys-form').aisKey.value = sys.aisKey ?? '';
 }
-$('#admin-form').onsubmit = e => {
+$('#admin-form').onsubmit = async e => {
   e.preventDefault();
   new FormData(e.target).forEach((v, k) => { admin[k] = v.trim(); });
-  save(K.admin, admin); sysInfo();
+  await saveProfile(); sysInfo();
 };
 $('#sys-form').onsubmit = async e => {
   e.preventDefault();
   const f = e.target;
-  sys.aisKey = f.aisKey.value.trim(); save(K.sys, sys);
-  if (f.newPass.value) { localStorage.setItem(K.pass, await hash(f.newPass.value)); f.newPass.value = ''; }
+  sys.aisKey = f.aisKey.value.trim(); await saveProfile();
+  if (f.newPass.value) {
+    const { error } = await db.auth.updateUser({ password: f.newPass.value });
+    alert(error ? 'Fehler: ' + error.message : 'Passwort geändert.'); f.newPass.value = '';
+  }
   sysInfo();
 };
-$('#wipe').onclick = () => {
+$('#wipe').onclick = async () => {
   if (prompt('Zum Bestätigen LÖSCHEN eingeben:') !== 'LÖSCHEN') return;
-  Object.values(K).forEach(k => localStorage.removeItem(k));
-  sessionStorage.clear(); location.reload();
+  const { data: { user } } = await db.auth.getUser();
+  await check(db.from('contacts').delete().eq('owner', user.id));
+  await check(db.from('profiles').delete().eq('owner', user.id));
+  location.reload();
 };
 function sysInfo() {
-  const bytes = Object.values(K).reduce((n, k) => n + (localStorage.getItem(k) || '').length, 0);
+  const bytes = JSON.stringify(contacts).length + JSON.stringify(admin).length;
   $('#sysinfo').textContent =
 `OPERATOR   ${admin.codename || '—'}
 KONTAKTE   ${contacts.length}
 FAHRZEUGE  ${contacts.reduce((n, c) => n + (c.vehicles || []).length, 0)}
-SPEICHER   ${(bytes / 1024).toFixed(1)} KB (lokal)
+SPEICHER   ${(bytes / 1024).toFixed(1)} KB (Supabase)
 AIS-KEY    ${sys.aisKey ? 'GESETZT' : 'FEHLT'}`;
 }
 
@@ -289,7 +304,7 @@ async function showOnMap(c) {
     if (!c.geo || c.geo.q !== q) {
       const r = await (await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q))).json();
       if (!r.length) throw new Error('ADRESSE NICHT GEFUNDEN');
-      c.geo = { q, lat: +r[0].lat, lon: +r[0].lon }; save(K.contacts, contacts);
+      c.geo = { q, lat: +r[0].lat, lon: +r[0].lon }; saveContact(c);
     }
     if (target) map.removeLayer(target);
     target = L.layerGroup([

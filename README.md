@@ -1,10 +1,18 @@
 # PROJEKT NACHTFALKE
 
-Privates Lagezentrum im Militär-Look. Läuft komplett im Browser, ohne Server. Alle Daten bleiben in `localStorage`.
+Privates Lagezentrum im Militär-Look. Statische Webseite mit Supabase als Datenbank.
 
-- **Kontakte**: Familie und Freunde mit Adresse, Telefonnummern, Fahrzeugen und Kennzeichen, Geburtstagserinnerung, Suche, JSON-Export und -Import, Adresse per Klick auf der Lagekarte anzeigen (OpenStreetMap-Suche)
+- **Kontakte**: Familie und Freunde mit Adresse, Telefonnummern, Fahrzeugen und Kennzeichen, Geburtstagserinnerung, Suche, JSON-Export und -Import. Die Adresse lässt sich per Klick auf der Lagekarte anzeigen (OpenStreetMap-Suche).
 - **Lagekarte**: Live-Flüge (OpenSky), Schiffe (AISStream.io, kostenloser API-Key nötig), Erdbeben (USGS), ISS, Tag/Nacht-Grenze
-- **Admin**: eigenes Profil, Kartenmittelpunkt, API-Key, Passphrase ändern
+- **Admin**: eigenes Profil, Kartenmittelpunkt, API-Key, Passwort ändern
 
-Start: `index.html` öffnen oder `python3 -m http.server` ausführen und `http://localhost:8000` aufrufen.
-Hinweis: Die Passphrase ist nur eine Sichtsperre, die Daten werden nicht verschlüsselt. Mach regelmäßig einen Export als Backup.
+## Daten
+Die Daten liegen im Supabase-Projekt `nachtfalke` (eu-central-1) in den Tabellen `contacts` und `profiles`.
+Row Level Security sorgt dafür, dass jeder angemeldete Benutzer nur seine eigenen Zeilen sieht.
+Der Publishable Key in `app.js` ist öffentlich gedacht. Den Schutz übernimmt RLS.
+
+## Deployment (Vercel)
+Vercel → Add New → Project → dieses Repo importieren → Framework "Other", kein Build-Befehl → Deploy.
+
+Danach in Supabase → Authentication → URL Configuration die Vercel-URL als Site URL eintragen.
+Wenn dein Konto angelegt ist: Authentication → Sign In / Providers → "Allow new users to sign up" ausschalten.
