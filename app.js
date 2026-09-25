@@ -40,8 +40,11 @@ async function login() {
     const st = await loadAll();
     sessionStorage.setItem('bw_code', code);
     if (st === 'created') alert('Code set. It is now permanent – remember it!');
+    sfx.granted();
+    await bootSequence();
     enter();
   } catch (e) {
+    sfx.denied();
     status(GATE_ERR[e.message] || '✖ ' + e.message, true);
     $('#gate-pass').value = ''; code = '';
   }
@@ -49,7 +52,8 @@ async function login() {
 function enter() { $('#gate').hidden = true; $('#app').hidden = false; renderList(); fillAdmin(); }
 $('#gate-btn').onclick = login;
 $('#gate-pass').onkeydown = e => { if (e.key === 'Enter') login(); };
-$('#lock').onclick = () => { sessionStorage.removeItem('bw_code'); location.reload(); };
+$('#lock').onclick = () => lockNow();
+function lockNow() { sessionStorage.removeItem('bw_code'); location.reload(); }
 if (code) loadAll().then(enter, () => { sessionStorage.removeItem('bw_code'); code = ''; });
 setInterval(() => { $('#utc').textContent = new Date().toISOString().slice(0, 19).replace('T', ' ') + 'Z'; }, 1000);
 
@@ -78,7 +82,7 @@ function renderList() {
     <li data-id="${c.id}" class="${c.id === selected ? 'sel' : ''}">
       <b>${esc(c.last).toUpperCase()}${c.last && c.first ? ', ' : ''}${esc(c.first)}</b><br>
       ${c.relation ? `<span class="tag">${esc(c.relation)}</span>` : ''}
-      ${(c.vehicles || []).filter(v => v.plate).map(v => `<span class="tag">${esc(v.plate)}</span>`).join('')}
+      ${(c.vehicles || []).filter(v => v.plate).map(v => `<span class="tag redact">${esc(v.plate)}</span>`).join('')}
     </li>`).join('') || '<li class="dim">NO ENTRIES</li>';
   $('#contact-list').querySelectorAll('li[data-id]').forEach(li => li.onclick = () => openContact(li.dataset.id));
   const soon = contacts.map(c => [c, daysToBirthday(c.birthday)]).filter(([, d]) => d !== null && d <= 14).sort((a, b) => a[1] - b[1]);
@@ -96,7 +100,7 @@ const SUB = {
 };
 function subHTML(key, items) {
   const s = SUB[key];
-  const row = it => `<div class="sub-item">${s.fields.map(([f, l]) => `<input data-f="${f}" placeholder="${l}" value="${esc(it[f])}">`).join('')}<button type="button" class="danger rm">✕</button></div>`;
+  const row = it => `<div class="sub-item">${s.fields.map(([f, l]) => `<input data-f="${f}" placeholder="${l}" value="${esc(it[f])}"${['number', 'plate'].includes(f) ? ' class="redact"' : ''}>`).join('')}<button type="button" class="danger rm">✕</button></div>`;
   return `<div class="sub" data-sub="${key}"><h3>${s.title}</h3><div class="items">${items.map(row).join('')}</div><button type="button" class="add">+ ADD</button></div>`;
 }
 function openContact(id) {
@@ -233,6 +237,7 @@ function toggle(name, on) {
   if (!on) {
     clearInterval(timers[name]);
     if (layers[name]) { map.removeLayer(layers[name]); delete layers[name]; }
+    if (name === 'radar') radarOverlay(false);
     const c = $('#c-' + name); if (c) c.textContent = '';
     feed(name.toUpperCase() + ' OFF');
     return;
@@ -243,6 +248,7 @@ function toggle(name, on) {
   ({
     flights: () => { loadFlights(); timers.flights = setInterval(loadFlights, 15000); },
     quakes: () => { loadQuakes(); timers.quakes = setInterval(loadQuakes, 300000); },
+    radar: () => radarOverlay(true),
     night: () => { timers.night = setInterval(() => layers.night && layers.night.setTime(), 60000); },
   })[name]();
 }
