@@ -54,11 +54,9 @@
     <div class="layers">
       <h3>LAYERS</h3>
       <label><input type="checkbox" data-layer="flights"> ✈ Live flights <span id="c-flights" class="dim"></span></label>
-      <label><input type="checkbox" data-layer="ships"> ⚓ Ships (AIS) <span id="c-ships" class="dim"></span></label>
       <label><input type="checkbox" data-layer="quakes"> ◎ Earthquakes 24h <span id="c-quakes" class="dim"></span></label>
-      <label><input type="checkbox" data-layer="iss"> ✦ ISS position</label>
       <label><input type="checkbox" data-layer="night"> ☾ Day/night line</label>
-      <p class="small dim">Flights: adsb.lol (map area, every 15 s). Ships: AISStream.io – enter API key in Admin.</p>
+      <p class="small dim">Flights: adsb.lol (map area, every 15 s).</p>
       <div id="feed" class="feed small"></div>
     </div>
   </section>
@@ -81,10 +79,6 @@
       </div>
       <div class="card">
         <h3>SYSTEM</h3>
-        <form id="sys-form" class="form">
-          <label>AISStream.io API key<input name="aisKey" placeholder="free at aisstream.io"></label>
-          <button>APPLY</button>
-        </form>
         <h3>STATUS</h3>
         <pre id="sysinfo" class="small"></pre>
         <button id="wipe" class="danger">DELETE ALL DATA</button>

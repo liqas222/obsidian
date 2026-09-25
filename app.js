@@ -172,7 +172,6 @@ $('#import').onchange = async e => {
 function fillAdmin() {
   const f = $('#admin-form');
   [...f.elements].forEach(el => { if (el.name) el.value = admin[el.name] ?? ''; });
-  $('#sys-form').aisKey.value = sys.aisKey ?? '';
 }
 autocomplete($('#admin-form').homeAddr, r => {
   $('#admin-form').homeAddr.value = r.label;
@@ -182,12 +181,6 @@ $('#admin-form').onsubmit = async e => {
   e.preventDefault();
   new FormData(e.target).forEach((v, k) => { admin[k] = v.trim(); });
   await saveProfile(); sysInfo();
-};
-$('#sys-form').onsubmit = async e => {
-  e.preventDefault();
-  const f = e.target;
-  sys.aisKey = f.aisKey.value.trim(); await saveProfile();
-  sysInfo();
 };
 $('#wipe').onclick = async () => {
   if (prompt('Type DELETE to confirm:') !== 'DELETE') return;
@@ -200,13 +193,11 @@ function sysInfo() {
 `OPERATOR   ${admin.codename || '—'}
 CONTACTS   ${contacts.length}
 VEHICLES   ${contacts.reduce((n, c) => n + (c.vehicles || []).length, 0)}
-STORAGE    ${(bytes / 1024).toFixed(1)} KB (Supabase)
-AIS-KEY    ${sys.aisKey ? 'SET' : 'MISSING'}`;
+STORAGE    ${(bytes / 1024).toFixed(1)} KB (Supabase)`;
 }
 
 /* ---------- Lagekarte ---------- */
 let map, layers = {}, timers = {};
-const ships = new Map();
 function feed(msg) {
   const el = $('#feed');
   el.insertAdjacentHTML('afterbegin', `<div>[${new Date().toISOString().slice(11, 19)}] ${esc(msg)}</div>`);
@@ -215,17 +206,16 @@ function feed(msg) {
 function initMap() {
   if (map) { map.invalidateSize(); return; }
   map = L.map('map', { worldCopyJump: true }).setView(admin.homeGeo ? [admin.homeGeo.lat, admin.homeGeo.lon] : [51, 10], admin.homeGeo ? 9 : 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { maxZoom: 20, subdomains: 'abcd', attribution: '© OpenStreetMap © CARTO' }).addTo(map);
   document.querySelectorAll('.layers input[data-layer]').forEach(cb => cb.onchange = () => toggle(cb.dataset.layer, cb.checked));
   let mv;
-  map.on('moveend', () => { clearTimeout(mv); mv = setTimeout(() => { if (layers.flights) loadFlights(); if (layers.ships) loadShips(); }, 800); });
+  map.on('moveend', () => { clearTimeout(mv); mv = setTimeout(() => { if (layers.flights) loadFlights(); }, 800); });
   feed('OPS MAP ONLINE');
 }
 function toggle(name, on) {
   if (!on) {
     clearInterval(timers[name]);
     if (layers[name]) { map.removeLayer(layers[name]); delete layers[name]; }
-    if (name === 'ships') ships.clear();
     const c = $('#c-' + name); if (c) c.textContent = '';
     feed(name.toUpperCase() + ' OFF');
     return;
@@ -236,9 +226,7 @@ function toggle(name, on) {
   ({
     flights: () => { loadFlights(); timers.flights = setInterval(loadFlights, 15000); },
     quakes: () => { loadQuakes(); timers.quakes = setInterval(loadQuakes, 300000); },
-    iss: () => { loadIss(); timers.iss = setInterval(loadIss, 5000); },
     night: () => { timers.night = setInterval(() => layers.night && layers.night.setTime(), 60000); },
-    ships: () => { loadShips(); timers.ships = setInterval(loadShips, 60000); },
   })[name]();
 }
 const icon = (cls, ch, rot = 0) => L.divIcon({ className: '', html: `<div class="${cls}" style="transform:rotate(${rot}deg)">${ch}</div>`, iconSize: [16, 16], iconAnchor: [8, 8] });
@@ -247,9 +235,9 @@ async function loadFlights() {
   const b = map.getBounds(), c = map.getCenter();
   const dist = Math.min(250, Math.ceil(c.distanceTo(b.getNorthEast()) / 1852));
   try {
-    const r = await fetch(`/api/flights?lat=${c.lat.toFixed(3)}&lon=${c.lng.toFixed(3)}&dist=${dist}`);
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+    const r = await fetch(`https://api.adsb.lol/v2/lat/${c.lat.toFixed(3)}/lon/${c.lng.toFixed(3)}/dist/${dist}`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = { ac: ((await r.json()).ac || []).filter(a => a.lat != null && a.lon != null).map(a => ({ hex: a.hex, call: (a.flight || '').trim(), reg: a.r, type: a.t, lat: a.lat, lon: a.lon, alt: a.alt_baro, speed: a.gs, track: a.track, squawk: a.squawk })) };
     if (!layers.flights) return;
     layers.flights.clearLayers();
     d.ac.slice(0, 1500).forEach(a => {
@@ -275,34 +263,18 @@ async function loadQuakes() {
     $('#c-quakes').textContent = `(${d.features.length})`;
   } catch (e) { feed('QUAKES: ' + e.message); }
 }
-let issFirst = true;
-async function loadIss() {
-  try {
-    const r = await fetch('/api/iss'), d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
-    if (!layers.iss) return;
-    layers.iss.clearLayers();
-    const m = L.marker([d.latitude, d.longitude], { icon: icon('iss', '✦') })
-      .bindPopup(`<b>ISS</b><br>${d.latitude.toFixed(2)}, ${d.longitude.toFixed(2)}<br>Altitude: ${Math.round(d.altitude)} km<br>Speed: ${Math.round(d.velocity)} km/h`).addTo(layers.iss);
-    if (issFirst) { issFirst = false; map.flyTo([d.latitude, d.longitude], 3); m.openPopup(); feed('ISS LOCATED'); }
-  } catch (e) { feed('ISS: ' + e.message); }
-}
-async function loadShips() {
-  const b = map.getBounds();
-  feed('AIS: SCANNING…');
-  try {
-    const r = await fetch(`/api/ships?bbox=${[b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(x => x.toFixed(3))}`, { headers: sys.aisKey ? { 'x-ais-key': sys.aisKey } : {} });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
-    if (!layers.ships) return;
-    d.ships.forEach(s => {
-      const html = `<b>${esc(s.name || 'MMSI ' + s.mmsi)}</b><br>MMSI: ${s.mmsi}<br>Speed: ${s.sog} kn<br>Heading: ${s.cog}°`;
-      if (ships.has(s.mmsi)) ships.get(s.mmsi).setLatLng([s.lat, s.lon]).setPopupContent(html);
-      else ships.set(s.mmsi, L.marker([s.lat, s.lon], { icon: icon('ship', '▲', s.hdg < 360 ? s.hdg : s.cog) }).bindPopup(html).addTo(layers.ships));
-    });
-    $('#c-ships').textContent = `(${ships.size})`;
-    feed(`AIS: ${d.ships.length} SHIPS REPORTED` + (d.ships.length ? '' : ' – ZOOM TO A COAST/PORT'));
-  } catch (e) { feed('AIS: ' + e.message + (e.message.includes('KEY') ? ' – ENTER IT IN ADMIN' : '')); }
+async function geocode(q) {
+  const r = await fetch(`https://photon.komoot.io/api/?limit=6&lang=en&q=${encodeURIComponent(q)}`);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return (await r.json()).features.map(f => {
+    const p = f.properties, city = p.city || p.town || p.village || '';
+    const street = [p.street || (p.type === 'street' ? p.name : ''), p.housenumber].filter(Boolean).join(' ');
+    return {
+      street: street || p.name || '', zip: p.postcode || '', city: city || p.name || '', country: p.country || '',
+      lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0],
+      label: [p.name && p.name !== p.street ? p.name : '', street, [p.postcode, city].filter(Boolean).join(' '), p.country].filter(Boolean).join(', '),
+    };
+  });
 }
 
 /* ---------- Adressvorschläge ---------- */
@@ -319,8 +291,7 @@ function autocomplete(input, onPick) {
     if (q.length < 3) return close();
     timer = setTimeout(async () => {
       try {
-        const d = await (await fetch('/api/geocode?q=' + encodeURIComponent(q))).json();
-        results = d.results || [];
+        results = await geocode(q);
         list.innerHTML = results.map((r, i) => `<div data-i="${i}">${esc(r.label)}</div>`).join('') || '<div class="dim">NO RESULTS</div>';
         list.hidden = false; idx = -1;
       } catch { close(); }
@@ -347,7 +318,7 @@ async function showOnMap(c) {
   document.querySelector('nav button[data-tab="lage"]').click();
   try {
     if (!c.geo || c.geo.q !== q) {
-      const r = (await (await fetch('/api/geocode?q=' + encodeURIComponent(q))).json()).results || [];
+      const r = await geocode(q);
       if (!r.length) throw new Error('ADDRESS NOT FOUND');
       c.geo = { q, lat: r[0].lat, lon: r[0].lon }; saveContact(c);
     }
