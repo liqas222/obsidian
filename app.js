@@ -207,9 +207,14 @@ function feed(msg) {
 async function addBaseMap() {
   try {
     const style = await (await fetch('https://tiles.openfreemap.org/styles/dark')).json();
-    style.layers = style.layers.filter(l => l.type !== 'symbol'
-      && /background|water|road|highway|street|path|bridge|tunnel|building|transportation/i.test(l.id)
-      && !/rail|aeroway|ferry|boundary|landuse|park/i.test(l.id));
+    const isPlace = l => l.type === 'symbol' && /country|state|city|town/i.test(l.id) && !/village|suburb|poi/i.test(l.id);
+    style.layers = style.layers.filter(l => isPlace(l) || (l.type !== 'symbol'
+      && /background|water|road|highway|street|path|bridge|tunnel|building|transportation|boundary/i.test(l.id)
+      && !/rail|aeroway|ferry|landuse|park/i.test(l.id)));
+    // Länder- und Städtenamen immer auf Englisch, in Großbuchstaben.
+    style.layers.filter(isPlace).forEach(l => {
+      l.layout = { ...l.layout, 'text-field': ['upcase', ['coalesce', ['get', 'name:en'], ['get', 'name_en'], ['get', 'name:latin'], ['get', 'name']]] };
+    });
     L.maplibreGL({ style, attribution: '© OpenStreetMap © OpenFreeMap' }).addTo(map);
   } catch {
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'osm-dark', attribution: '© OpenStreetMap' }).addTo(map);
