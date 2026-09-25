@@ -56,7 +56,7 @@
       <label><input type="checkbox" data-layer="flights"> ✈ Live flights <span id="c-flights" class="dim"></span></label>
       <label><input type="checkbox" data-layer="quakes"> ◎ Earthquakes 24h <span id="c-quakes" class="dim"></span></label>
       <label><input type="checkbox" data-layer="night"> ☾ Day/night line</label>
-      <p class="small dim">Flights: adsb.lol (map area, every 15 s).</p>
+      <p class="small dim">Flights: public ADS-B data (map area, every 15 s).</p>
       <div id="feed" class="feed small"></div>
     </div>
   </section>
@@ -89,6 +89,9 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@joergdietrich/leaflet.terminator@1.1.0/L.Terminator.js"></script>
 <script src="app.js"></script>
 </body>

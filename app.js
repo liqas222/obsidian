@@ -203,10 +203,22 @@ function feed(msg) {
   el.insertAdjacentHTML('afterbegin', `<div>[${new Date().toISOString().slice(11, 19)}] ${esc(msg)}</div>`);
   while (el.children.length > 60) el.lastChild.remove();
 }
+// Schlichte Karte ohne Key: OpenFreeMap-Vektorkacheln, reduziert auf Hintergrund, Wasser, Straßen und Gebäude.
+async function addBaseMap() {
+  try {
+    const style = await (await fetch('https://tiles.openfreemap.org/styles/dark')).json();
+    style.layers = style.layers.filter(l => l.type !== 'symbol'
+      && /background|water|road|highway|street|path|bridge|tunnel|building|transportation/i.test(l.id)
+      && !/rail|aeroway|ferry|boundary|landuse|park/i.test(l.id));
+    L.maplibreGL({ style, attribution: '© OpenStreetMap © OpenFreeMap' }).addTo(map);
+  } catch {
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'osm-dark', attribution: '© OpenStreetMap' }).addTo(map);
+  }
+}
 function initMap() {
   if (map) { map.invalidateSize(); return; }
   map = L.map('map', { worldCopyJump: true }).setView(admin.homeGeo ? [admin.homeGeo.lat, admin.homeGeo.lon] : [51, 10], admin.homeGeo ? 9 : 6);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { maxZoom: 20, subdomains: 'abcd', attribution: '© OpenStreetMap © CARTO' }).addTo(map);
+  addBaseMap();
   document.querySelectorAll('.layers input[data-layer]').forEach(cb => cb.onchange = () => toggle(cb.dataset.layer, cb.checked));
   let mv;
   map.on('moveend', () => { clearTimeout(mv); mv = setTimeout(() => { if (layers.flights) loadFlights(); }, 800); });
@@ -235,9 +247,9 @@ async function loadFlights() {
   const b = map.getBounds(), c = map.getCenter();
   const dist = Math.min(250, Math.ceil(c.distanceTo(b.getNorthEast()) / 1852));
   try {
-    const r = await fetch(`https://api.adsb.lol/v2/lat/${c.lat.toFixed(3)}/lon/${c.lng.toFixed(3)}/dist/${dist}`);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const d = { ac: ((await r.json()).ac || []).filter(a => a.lat != null && a.lon != null).map(a => ({ hex: a.hex, call: (a.flight || '').trim(), reg: a.r, type: a.t, lat: a.lat, lon: a.lon, alt: a.alt_baro, speed: a.gs, track: a.track, squawk: a.squawk })) };
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/flights?lat=${c.lat.toFixed(3)}&lon=${c.lng.toFixed(3)}&dist=${dist}`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
     if (!layers.flights) return;
     layers.flights.clearLayers();
     d.ac.slice(0, 1500).forEach(a => {
