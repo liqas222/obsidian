@@ -226,7 +226,7 @@ async function addBaseMap() {
 }
 function initMap() {
   if (map) { map.invalidateSize(); return; }
-  map = L.map('map', { worldCopyJump: true }).setView(admin.homeGeo ? [admin.homeGeo.lat, admin.homeGeo.lon] : [51, 10], admin.homeGeo ? 9 : 6);
+  map = L.map('map', { worldCopyJump: true, minZoom: 4, maxBounds: [[-85, -540], [85, 540]], maxBoundsViscosity: 1 }).setView(admin.homeGeo ? [admin.homeGeo.lat, admin.homeGeo.lon] : [51, 10], admin.homeGeo ? 9 : 6);
   addBaseMap();
   document.querySelectorAll('.layers input[data-layer]').forEach(cb => cb.onchange = () => toggle(cb.dataset.layer, cb.checked));
   let mv;
