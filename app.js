@@ -1,4 +1,4 @@
-/* PROJEKT NACHTFALKE – Daten liegen in Supabase (pro Benutzer per Row Level Security geschützt). */
+/* PROJECT BLACKWING – Daten liegen in Supabase, Zugriff nur mit dem Zugangscode. */
 const SUPABASE_URL = 'https://mwzmezrubzlxcaaqmojf.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_vg6IQ24fI7rQrGgSQt_T9Q_J2-2WphA';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -11,39 +11,46 @@ let admin = {};
 let sys = {};
 let selected = null;
 
-/* ---------- Persistenz ---------- */
+/* ---------- Persistenz (nur über Code-geschützte Datenbankfunktionen) ---------- */
+let code = sessionStorage.getItem('bw_code') || '';
 function status(msg, err) { const el = $('#gate-msg'); el.textContent = msg; el.style.color = err ? 'var(--red)' : ''; }
-async function check(p) { const { error } = await p; if (error) { alert('SPEICHERFEHLER: ' + error.message); throw error; } }
-const saveContact = c => check(db.from('contacts').upsert({ id: c.id, data: c, updated_at: new Date().toISOString() }));
-const deleteContact = id => check(db.from('contacts').delete().eq('id', id));
-const saveProfile = () => check(db.from('profiles').upsert({ admin, settings: sys, updated_at: new Date().toISOString() }));
+async function rpc(fn, args = {}) {
+  const { data, error } = await db.rpc(fn, { p_code: code, ...args });
+  if (error || data === false) { alert('SPEICHERFEHLER: ' + (error?.message || 'Code ungültig')); throw error || new Error('denied'); }
+  return data;
+}
+const saveContact = c => rpc('bw_save_contact', { p_id: c.id, p_data: c });
+const deleteContact = id => rpc('bw_delete_contact', { p_id: id });
+const saveProfile = () => rpc('bw_save_profile', { p_admin: admin, p_settings: sys });
 async function loadAll() {
-  const [c, p] = await Promise.all([db.from('contacts').select('data'), db.from('profiles').select('admin,settings').maybeSingle()]);
-  if (c.error || p.error) throw c.error || p.error;
-  contacts = c.data.map(r => r.data);
-  admin = p.data?.admin || {};
-  sys = p.data?.settings || {};
+  const { data, error } = await db.rpc('bw_load', { p_code: code });
+  if (error) throw error;
+  if (data.error) throw new Error(data.error);
+  contacts = data.contacts; admin = data.admin || {}; sys = data.settings || {};
+  return data.status;
 }
 
 /* ---------- Zugang ---------- */
-async function auth(signup) {
-  const email = $('#gate-email').value.trim(), password = $('#gate-pass').value;
-  if (!email || !password) return;
-  status('VERBINDE…');
-  const { data, error } = signup ? await db.auth.signUp({ email, password }) : await db.auth.signInWithPassword({ email, password });
-  if (error) { status('✖ ' + error.message.toUpperCase(), true); $('#gate-pass').value = ''; return; }
-  if (!data.session) { status('BESTÄTIGUNGS-MAIL GESENDET – LINK ÖFFNEN, DANN EINLOGGEN'); return; }
-  enter();
+const GATE_ERR = { denied: '✖ ZUGRIFF VERWEIGERT', locked: '✖ GESPERRT – 15 MIN WARTEN', short: '✖ MINDESTENS 4 ZEICHEN' };
+async function login() {
+  code = $('#gate-pass').value;
+  if (!code) return;
+  status('PRÜFE…');
+  try {
+    const st = await loadAll();
+    sessionStorage.setItem('bw_code', code);
+    if (st === 'created') alert('Code gesetzt. Er gilt ab jetzt dauerhaft – gut merken!');
+    enter();
+  } catch (e) {
+    status(GATE_ERR[e.message] || '✖ ' + e.message, true);
+    $('#gate-pass').value = ''; code = '';
+  }
 }
-async function enter() {
-  try { await loadAll(); } catch (e) { status('✖ ' + e.message, true); return; }
-  $('#gate').hidden = true; $('#app').hidden = false; renderList(); fillAdmin();
-}
-$('#gate-btn').onclick = () => auth(false);
-$('#gate-signup').onclick = e => { e.preventDefault(); auth(true); };
-$('#gate-pass').onkeydown = e => { if (e.key === 'Enter') auth(false); };
-$('#lock').onclick = async () => { await db.auth.signOut(); location.reload(); };
-db.auth.getSession().then(({ data }) => { if (data.session) enter(); });
+function enter() { $('#gate').hidden = true; $('#app').hidden = false; renderList(); fillAdmin(); }
+$('#gate-btn').onclick = login;
+$('#gate-pass').onkeydown = e => { if (e.key === 'Enter') login(); };
+$('#lock').onclick = () => { sessionStorage.removeItem('bw_code'); location.reload(); };
+if (code) loadAll().then(enter, () => { sessionStorage.removeItem('bw_code'); code = ''; });
 setInterval(() => { $('#utc').textContent = new Date().toISOString().slice(0, 19).replace('T', ' ') + 'Z'; }, 1000);
 
 /* ---------- Tabs ---------- */
@@ -139,7 +146,7 @@ function flash(msg) { const b = $('#contact-form button'); const t = b.textConte
 
 $('#export').onclick = () => {
   const blob = new Blob([JSON.stringify({ contacts, admin, exported: new Date().toISOString() }, null, 2)], { type: 'application/json' });
-  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `nachtfalke-backup-${Date.now()}.json` });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `blackwing-backup-${Date.now()}.json` });
   a.click(); URL.revokeObjectURL(a.href);
 };
 $('#import').onchange = async e => {
@@ -147,7 +154,7 @@ $('#import').onchange = async e => {
     const d = JSON.parse(await e.target.files[0].text());
     if (!Array.isArray(d.contacts)) throw 0;
     if (!confirm(`${d.contacts.length} Kontakte importieren? Gleiche IDs werden überschrieben.`)) return;
-    await check(db.from('contacts').upsert(d.contacts.map(c => ({ id: c.id, data: c }))));
+    for (const c of d.contacts) await saveContact(c);
     if (d.admin) { admin = d.admin; await saveProfile(); fillAdmin(); }
     await loadAll();
     renderList();
@@ -170,17 +177,11 @@ $('#sys-form').onsubmit = async e => {
   e.preventDefault();
   const f = e.target;
   sys.aisKey = f.aisKey.value.trim(); await saveProfile();
-  if (f.newPass.value) {
-    const { error } = await db.auth.updateUser({ password: f.newPass.value });
-    alert(error ? 'Fehler: ' + error.message : 'Passwort geändert.'); f.newPass.value = '';
-  }
   sysInfo();
 };
 $('#wipe').onclick = async () => {
   if (prompt('Zum Bestätigen LÖSCHEN eingeben:') !== 'LÖSCHEN') return;
-  const { data: { user } } = await db.auth.getUser();
-  await check(db.from('contacts').delete().eq('owner', user.id));
-  await check(db.from('profiles').delete().eq('owner', user.id));
+  await rpc('bw_wipe');
   location.reload();
 };
 function sysInfo() {

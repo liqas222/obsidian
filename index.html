@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NACHTFALKE // Lagezentrum</title>
+<title>BLACKWING // Command Center</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -12,20 +12,19 @@
 
 <section id="gate">
   <div class="gate-box">
-    <div class="stamp">STRENG GEHEIM</div>
-    <h1>PROJEKT NACHTFALKE</h1>
-    <p class="dim">LAGEZENTRUM // ZUGANG NUR FÜR BEFUGTE</p>
-    <p id="gate-msg">IDENTIFIKATION ERFORDERLICH</p>
-    <input id="gate-email" type="email" autocomplete="username" placeholder="KENNUNG (E-MAIL)">
-    <input id="gate-pass" type="password" autocomplete="current-password" placeholder="PASSWORT">
+    <div class="stamp">TOP SECRET</div>
+    <h1>PROJECT BLACKWING</h1>
+    <p class="dim">COMMAND CENTER // AUTHORIZED PERSONNEL ONLY</p>
+    <p id="gate-msg">ZUGANGSCODE EINGEBEN</p>
+    <input id="gate-pass" type="password" autocomplete="current-password" placeholder="••••••••">
     <button id="gate-btn">AUTHENTIFIZIEREN</button>
-    <p class="small"><a href="#" id="gate-signup" class="dim">Erstzugang: Konto anlegen</a></p>
+    <p class="dim small">Erster Start: der eingegebene Code gilt ab dann dauerhaft.</p>
   </div>
 </section>
 
 <main id="app" hidden>
   <header>
-    <div class="brand">◆ NACHTFALKE <span class="dim">// LZ-01</span></div>
+    <div class="brand">◆ BLACKWING <span class="dim">// CC-01</span></div>
     <nav>
       <button data-tab="kontakte" class="active">KONTAKTE</button>
       <button data-tab="lage">LAGEKARTE</button>
@@ -84,7 +83,6 @@
         <h3>SYSTEM</h3>
         <form id="sys-form" class="form">
           <label>AISStream.io API-Key<input name="aisKey" placeholder="kostenlos auf aisstream.io"></label>
-          <label>Neues Passwort<input name="newPass" type="password" autocomplete="new-password"></label>
           <button>ÜBERNEHMEN</button>
         </form>
         <h3>STATUS</h3>

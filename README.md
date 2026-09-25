@@ -1,18 +1,16 @@
-# PROJEKT NACHTFALKE
+# PROJECT BLACKWING
 
-Privates Lagezentrum im Militär-Look. Statische Webseite mit Supabase als Datenbank.
+Privates Command Center im Militär-Look. Statische Webseite mit Supabase als Datenbank.
 
 - **Kontakte**: Familie und Freunde mit Adresse, Telefonnummern, Fahrzeugen und Kennzeichen, Geburtstagserinnerung, Suche, JSON-Export und -Import. Die Adresse lässt sich per Klick auf der Lagekarte anzeigen (OpenStreetMap-Suche).
 - **Lagekarte**: Live-Flüge (OpenSky), Schiffe (AISStream.io, kostenloser API-Key nötig), Erdbeben (USGS), ISS, Tag/Nacht-Grenze
-- **Admin**: eigenes Profil, Kartenmittelpunkt, API-Key, Passwort ändern
+- **Admin**: eigenes Profil, Kartenmittelpunkt, API-Key
 
-## Daten
-Die Daten liegen im Supabase-Projekt `nachtfalke` (eu-central-1) in den Tabellen `contacts` und `profiles`.
-Row Level Security sorgt dafür, dass jeder angemeldete Benutzer nur seine eigenen Zeilen sieht.
-Der Publishable Key in `app.js` ist öffentlich gedacht. Den Schutz übernimmt RLS.
+## Daten und Zugang
+Die Daten liegen im Supabase-Projekt `nachtfalke` (eu-central-1) in den Tabellen `bw_contacts` und `bw_config`.
+Direkt kommt niemand an die Tabellen heran. Zugriff gibt es nur über Datenbankfunktionen (`bw_load`, `bw_save_contact` …), die den Zugangscode prüfen.
+Der erste eingegebene Code wird als bcrypt-Hash gespeichert und gilt dauerhaft. Nach 10 Fehlversuchen ist der Zugang 15 Minuten gesperrt.
+Code vergessen? Im Supabase SQL-Editor `delete from bw_config;` ausführen. Das löscht auch Profil und Einstellungen, die Kontakte bleiben erhalten. Danach setzt die nächste Eingabe einen neuen Code.
 
 ## Deployment (Vercel)
 Vercel → Add New → Project → dieses Repo importieren → Framework "Other", kein Build-Befehl → Deploy.
-
-Danach in Supabase → Authentication → URL Configuration die Vercel-URL als Site URL eintragen.
-Wenn dein Konto angelegt ist: Authentication → Sign In / Providers → "Allow new users to sign up" ausschalten.
